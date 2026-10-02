@@ -1,0 +1,79 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/parbake-logo-dark.svg">
+    <img src="docs/assets/parbake-logo-light.svg" alt="Parbake" width="520">
+  </picture>
+</p>
+
+# Parbake
+
+Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.framework, as
+`container-runtime-macos`, a runtime plugin for [apple/container](https://github.com/apple/container).
+
+- Each container boots its own APFS clone of an installed macOS VM bundle; the source bundle stays unchanged.
+- The init process of the container is the guest: `container start` boots it, and the container exits when the guest shuts down.
+- `container stop` asks the guest to shut down and stops it forcibly once the timeout passes; `container kill -s KILL` stops it at once.
+- Networking uses Virtualization.framework NAT.
+
+## Requirements
+
+- Mac with Apple silicon, macOS 15 or later, Xcode 26
+- [OCX](https://ocx.sh) for `task` and the lint tools; run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`
+- An apple/container build whose plugin config supports `[runtimeConfig]`: the
+  [extra-code/container](https://github.com/extra-code/container) fork at the revision `Package.swift` pins.
+  SwiftPM fetches it, and `dev-env.sh` builds it
+- An installed macOS VM bundle with `Disk.img`, `AuxiliaryStorage`, `HardwareModel` and `MachineIdentifier`, such as the bundle Apple's "Running macOS in a virtual machine on Apple silicon" sample creates
+
+## Quick start
+
+```bash
+scripts/create-vm-bundle.sh        # download macOS, install it into ~/VM.bundle, open the Setup Assistant
+scripts/dev-env.sh up              # build container and the plugin, switch to the development services
+scripts/dev-env.sh run ~/VM.bundle # boot a macOS container from the bundle
+scripts/dev-env.sh down            # stop the development services, restart the installed ones
+```
+
+- `create-vm-bundle.sh` downloads the latest restore image this host supports into
+  `~/Library/Caches/container-runtime-macos`, resumes interrupted downloads, and reuses
+  completed ones. `--help` lists the options.
+- `dev-env.sh` builds apple/container in `.build/dev-env/container` and keeps its data in
+  `~/.container-macos-dev`. The installed container keeps its binaries, data and containers.
+  Both register the same launchd service, so `up` stops the installed services and `down`
+  starts them again.
+- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install` and `setup`.
+
+## Build and install
+
+```bash
+task sign                             # build and sign with the virtualization entitlement
+task test
+task install INSTALL_ROOT=/usr/local  # installs to <root>/libexec/container-plugins
+```
+
+`INSTALL_ROOT` is the root of the container installation that loads the plugin. Restart the
+container system services after you install the plugin.
+
+## Run
+
+```bash
+container run -d \
+  --runtime container-runtime-macos \
+  --label runtime-macos.bundle=$HOME/VM.bundle \
+  --cpus 4 --memory 8G \
+  alpine
+```
+
+- `runtime-macos.bundle` names the VM bundle to boot.
+- The image reference is required by the CLI and otherwise unused.
+- The guest gets at least 4 GiB of memory.
+
+## Limitations
+
+- At most two macOS guests run at the same time per host.
+- `exec`, `cp`, `stats`, `dial`, `export` and `clean` return "unsupported"; they need a guest agent.
+- Stop signals other than `KILL` request a guest shutdown.
+- The guest has no attached terminal; `run -it` shows no guest output.
+
+## License
+
+Parbake is licensed under the [Apache License 2.0](LICENSE).

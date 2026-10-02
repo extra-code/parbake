@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+abstract = "macOS container runtime plugin"
+author = "extra-code"
+
+[servicesConfig]
+loadAtBoot = false
+runAtLoad = false
+defaultArguments = []
+
+[[servicesConfig.services]]
+type = "runtime"
+
+[runtimeConfig]
+requiresKernel = false
+requiresInitImage = false
+requiresImageSnapshot = false

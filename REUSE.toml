@@ -12,6 +12,7 @@ path = [
     "NOTICE",
     "Package.resolved",
     "container-runtime-macos.entitlements",
+    "docs/assets/*.png",
     "grimoire.lock",
     "grimoire.toml",
     "ocx.lock",

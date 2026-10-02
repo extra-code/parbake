@@ -1,0 +1,29 @@
+<!-- SPDX-FileCopyrightText: 2026 Christian Semmelmann -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs><linearGradient id="bg-a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4a4f"/>
+      <stop offset="0.55" stop-color="#2c2c30"/>
+      <stop offset="1" stop-color="#161618"/>
+    </linearGradient>
+    <linearGradient id="sheen-a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gl-a" x1="0" y1="334" x2="0" y2="690" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffbe5c"/>
+      <stop offset="1" stop-color="#f0641e"/>
+    </linearGradient>
+    <filter id="drop-a" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <mask id="cut-a" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <g fill="#000"><rect x="-20" y="-112" width="40" height="224" rx="20" transform="translate(436 524) rotate(38)"/><rect x="-20" y="-112" width="40" height="224" rx="20" transform="translate(572 500) rotate(38)"/></g>
+    </mask></defs>
+  <rect width="1024" height="1024" fill="url(#bg-a)"/><rect width="1024" height="1024" fill="url(#sheen-a)"/>
+  <g filter="url(#drop-a)"><g fill="url(#gl-a)">
+    <path d="M262 628C262 462 374 372 512 372S762 462 762 628Q762 648 742 648H282Q262 648 262 628Z" transform="translate(0 -38)" mask="url(#cut-a)"/>
+    <g transform="translate(0 -38)"><rect x="262" y="684" width="500" height="44" rx="22"/></g>
+  </g></g>
+</svg>
