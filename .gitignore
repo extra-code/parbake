@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+.handoffs/
+.DS_Store
+.vscode

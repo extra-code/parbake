@@ -1,0 +1,122 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+# Swift, codesign and swift-format come from Xcode. Every other tool runs through
+# `ocx exec`, which downloads it on first use (see ocx.toml).
+version: "3"
+
+vars:
+  NAME: container-runtime-macos
+  SWIFT: /usr/bin/swift
+  CONFIGURATION: '{{.CONFIGURATION | default "debug"}}'
+  CODESIGN_OPTS: '{{.CODESIGN_OPTS | default "--force --sign - --timestamp=none"}}'
+  # Root of the container installation; plugins load from <root>/libexec/container-plugins.
+  INSTALL_ROOT: '{{.INSTALL_ROOT | default "/usr/local"}}'
+  PLUGIN_DIR: "{{.INSTALL_ROOT}}/libexec/container-plugins/{{.NAME}}"
+  # Naming the binding resolves only that tool, not the whole group.
+  SHELLCHECK: ocx exec -g lint shellcheck -- shellcheck
+  SHFMT: ocx exec -g lint shfmt -- shfmt -i 4 -ci
+  REUSE: ocx exec -g lint uv -- uvx --from 'reuse[charset-normalizer]==6.2.0' reuse
+  SHELL_FILES:
+    sh: git ls-files '*.sh'
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  setup:
+    desc: Render the OCX toolchain; group tools download on first use
+    cmds:
+      - ocx pull
+
+  build:
+    desc: Build all products (CONFIGURATION=debug|release)
+    cmds:
+      - "{{.SWIFT}} build -c {{.CONFIGURATION}}"
+
+  sign:
+    desc: Build and ad-hoc sign the binaries with their entitlements
+    deps: [build]
+    vars:
+      BIN_DIR:
+        sh: "{{.SWIFT}} build -c {{.CONFIGURATION}} --show-bin-path"
+    cmds:
+      - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/{{.NAME}}"
+      - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/parbake"
+
+  bin-path:
+    desc: Print the build output directory
+    silent: true
+    cmds:
+      - "{{.SWIFT}} build -c {{.CONFIGURATION}} --show-bin-path"
+
+  test:
+    desc: Run the Swift tests
+    cmds:
+      - "{{.SWIFT}} test -c {{.CONFIGURATION}}"
+
+  install:
+    desc: Install the signed plugin into INSTALL_ROOT
+    deps: [sign]
+    vars:
+      BIN_DIR:
+        sh: "{{.SWIFT}} build -c {{.CONFIGURATION}} --show-bin-path"
+    cmds:
+      - mkdir -p "{{.PLUGIN_DIR}}/bin"
+      - install -m 0755 "{{.BIN_DIR}}/{{.NAME}}" "{{.PLUGIN_DIR}}/bin/{{.NAME}}"
+      - install -m 0644 config.toml "{{.PLUGIN_DIR}}/config.toml"
+      - echo "installed {{.NAME}} to {{.PLUGIN_DIR}}"
+
+  uninstall:
+    desc: Remove the installed plugin
+    cmds:
+      - rm -rf "{{.PLUGIN_DIR}}"
+
+  fmt:
+    desc: Format Swift and shell sources
+    cmds:
+      - task: fmt:swift
+      - task: fmt:sh
+
+  fmt:swift:
+    cmds:
+      - "{{.SWIFT}} format --recursive --configuration .swift-format -i Sources Tests Package.swift"
+
+  fmt:sh:
+    cmds:
+      - "{{.SHFMT}} -w {{.SHELL_FILES | catLines}}"
+
+  lint:
+    desc: Check Swift and shell formatting, lint shell scripts, check licence headers
+    cmds:
+      - task: lint:swift
+      - task: lint:sh
+      - task: lint:reuse
+
+  lint:reuse:
+    cmds:
+      - "{{.REUSE}} lint"
+
+  lint:swift:
+    cmds:
+      - "{{.SWIFT}} format lint --recursive --configuration .swift-format Sources Tests Package.swift"
+
+  lint:sh:
+    cmds:
+      - "{{.SHELLCHECK}} {{.SHELL_FILES | catLines}}"
+      - "{{.SHFMT}} -d {{.SHELL_FILES | catLines}}"
+
+  check:
+    desc: Lint, build, sign and test — the full local gate
+    cmds:
+      - task: lint
+      - task: sign
+      - task: test
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - "{{.SWIFT}} package clean"

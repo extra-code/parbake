@@ -1,0 +1,21 @@
+# SPDX headers live in the source files themselves. This file covers the files that take no comment.
+version = 1
+
+[[annotations]]
+path = [
+    "**.md",
+    ".agents/**",
+    ".claude/**",
+    ".gitattributes",
+    ".gitignore",
+    ".swift-format",
+    "NOTICE",
+    "Package.resolved",
+    "container-runtime-macos.entitlements",
+    "grimoire.lock",
+    "grimoire.toml",
+    "ocx.lock",
+    "scripts/fixtures/**",
+]
+SPDX-FileCopyrightText = "2026 Christian Semmelmann"
+SPDX-License-Identifier = "Apache-2.0"
