@@ -30,6 +30,7 @@ let package = Package(
                 .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerLog", package: "container"),
+                .product(name: "ContainerNetworkClient", package: "container"),
                 .product(name: "ContainerPlugin", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerRuntimeClient", package: "container"),

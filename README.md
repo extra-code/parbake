@@ -19,7 +19,11 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
   for it, whatever `--time` says; a guest without that key gets a power-button request. Either way the guest
   is stopped forcibly once the wait passes. `container kill` shuts the guest down the same way, and
   `container kill -s KILL` stops it at once.
-- Networking uses Virtualization.framework NAT.
+- The guest joins the container's network, by default container's `default` network: the network
+  allocates its address and MAC address, and `container ls` shows the address. That network runs no
+  DHCP server, so the runtime starts its own interface on the network and answers the guest's DHCP
+  requests with that address, the gateway and the DNS servers. The guest image needs no change. A
+  container without a network, or a host earlier than macOS 26, uses Virtualization.framework NAT.
 
 ## Requirements
 
@@ -52,8 +56,8 @@ scripts/dev-env.sh down            # stop the development services, restart the 
 - With `--username`, the first boot after the installation creates that account with automatic
   login and Remote Login, without the Setup Assistant. One SSH session then adds the public key from
   `--authorized-key` and the bundle's own `GuestKey`, allows the account to run `/sbin/shutdown`
-  without a password (`/etc/sudoers.d/parbake`), turns Spotlight indexing off and empties the
-  caches with `--tidy`, and shuts the guest down. The password is prompted for. Without
+  without a password (`/etc/sudoers.d/parbake`), turns Spotlight indexing off and empties the caches
+  with `--tidy`, and shuts the guest down. The password is prompted for. Without
   `--username`, the guest opens in a window for the Setup Assistant.
 - On a CI host, add `--keychain`: the password comes from the login keychain (generic password,
   service `container-runtime-macos.guest`, account = username). When the keychain has none,

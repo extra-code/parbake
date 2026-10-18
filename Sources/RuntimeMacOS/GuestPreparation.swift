@@ -8,8 +8,11 @@ public enum GuestPreparation {
     /// The line the preparation script prints once everything before the shutdown succeeded.
     public static let preparedMarker = "parbake: prepared"
 
+    /// The commands the provisioned account runs with sudo and without a password.
+    public static let passwordlessCommands = ["/sbin/shutdown"]
+
     /// The script that runs in the guest in one SSH session: it adds the public keys, allows
-    /// the account to run `/sbin/shutdown` without a password, optionally turns Spotlight
+    /// the account to run `passwordlessCommands` without a password, optionally turns Spotlight
     /// indexing off and empties the caches, and shuts the guest down.
     ///
     /// The password reaches sudo through the script on ssh's standard input.
@@ -28,7 +31,7 @@ public enum GuestPreparation {
             PARBAKE_PASSWORD
             PARBAKE_ROOT=$(cat <<'PARBAKE_ROOT'
             set -eu
-            printf '%s ALL=(root) NOPASSWD: /sbin/shutdown\\n' '\(username)' > /etc/sudoers.d/parbake.new
+            printf '%s ALL=(root) NOPASSWD: %s\\n' '\(username)' '\(passwordlessCommands.joined(separator: ", "))' > /etc/sudoers.d/parbake.new
             chmod 0440 /etc/sudoers.d/parbake.new
             visudo -cqf /etc/sudoers.d/parbake.new
             mv /etc/sudoers.d/parbake.new /etc/sudoers.d/parbake
@@ -36,7 +39,7 @@ public enum GuestPreparation {
             )
             printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
             unset PARBAKE_PASSWORD
-            sudo -n -l /sbin/shutdown >/dev/null
+            \(passwordlessCommands.map { "sudo -n -l \($0) >/dev/null" }.joined(separator: "\n"))
             echo '\(preparedMarker)'
             sudo -n /sbin/shutdown -h now >/dev/null
 

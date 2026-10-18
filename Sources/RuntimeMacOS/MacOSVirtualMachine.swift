@@ -4,6 +4,19 @@
 import ContainerizationError
 import Foundation
 import Virtualization
+import vmnet
+
+/// A vmnet network the guest attaches to instead of Virtualization.framework NAT.
+public struct GuestNetwork: @unchecked Sendable {
+    public let reference: vmnet_network_ref
+    /// The MAC address the network allocated for the guest, or nil for a random one.
+    public let macAddress: String?
+
+    public init(reference: vmnet_network_ref, macAddress: String?) {
+        self.reference = reference
+        self.macAddress = macAddress
+    }
+}
 
 /// How a guest run ended.
 public struct GuestExit: Sendable, Equatable {
@@ -37,8 +50,8 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     private var exit: GuestExit?
     private var waiters: [CheckedContinuation<GuestExit, Never>] = []
 
-    public init(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64) throws {
-        let configuration = try Self.configuration(bundle: bundle, cpus: cpus, memoryInBytes: memoryInBytes)
+    public init(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64, network: GuestNetwork? = nil) throws {
+        let configuration = try Self.configuration(bundle: bundle, cpus: cpus, memoryInBytes: memoryInBytes, network: network)
         self.macAddress = configuration.networkDevices.first?.macAddress.string ?? ""
         let queue = DispatchQueue(label: "container-runtime-macos.vm")
         self.queue = queue
@@ -50,8 +63,11 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     /// Builds a validated configuration for the guest in `bundle`.
     ///
     /// Clamps `cpus` to the range Virtualization.framework allows and raises
-    /// `memoryInBytes` to at least `minimumMemoryInBytes`.
-    public static func configuration(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64) throws -> VZVirtualMachineConfiguration {
+    /// `memoryInBytes` to at least `minimumMemoryInBytes`. The guest attaches to `network`, or to
+    /// Virtualization.framework NAT without one.
+    public static func configuration(
+        bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64, network guestNetwork: GuestNetwork? = nil
+    ) throws -> VZVirtualMachineConfiguration {
         guard let hardwareModelData = try? Data(contentsOf: bundle.hardwareModelURL),
             let hardwareModel = VZMacHardwareModel(dataRepresentation: hardwareModelData)
         else {
@@ -87,7 +103,20 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: disk)]
 
         let network = VZVirtioNetworkDeviceConfiguration()
-        network.attachment = VZNATNetworkDeviceAttachment()
+        if let guestNetwork {
+            guard #available(macOS 26, *) else {
+                throw ContainerizationError(.unsupported, message: "a vmnet network attachment needs a macOS 26 or later host")
+            }
+            network.attachment = VZVmnetNetworkDeviceAttachment(network: guestNetwork.reference)
+            if let macAddress = guestNetwork.macAddress {
+                guard let address = VZMACAddress(string: macAddress) else {
+                    throw ContainerizationError(.invalidArgument, message: "invalid MAC address \(macAddress)")
+                }
+                network.macAddress = address
+            }
+        } else {
+            network.attachment = VZNATNetworkDeviceAttachment()
+        }
         configuration.networkDevices = [network]
 
         let graphics = VZMacGraphicsDeviceConfiguration()
