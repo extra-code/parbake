@@ -17,8 +17,9 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
 
 ## Requirements
 
-- Mac with Apple silicon, macOS 15 or later, Xcode 26
+- Mac with Apple silicon, macOS 15 or later, Xcode 27 (macOS 27 SDK)
 - [OCX](https://ocx.sh) for `task` and the lint tools; run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`
+- For `--username` provisioning: a macOS 27 or later host and guest
 - An apple/container build whose plugin config supports `[runtimeConfig]`: the
   [extra-code/container](https://github.com/extra-code/container) fork at the revision `Package.swift` pins.
   SwiftPM fetches it, and `dev-env.sh` builds it
@@ -27,7 +28,8 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
 ## Quick start
 
 ```bash
-scripts/create-vm-bundle.sh        # download macOS, install it into ~/VM.bundle, open the Setup Assistant
+scripts/create-vm-bundle.sh --username ci --authorized-key ~/.ssh/id_ed25519.pub
+                                   # download macOS, install it into ~/VM.bundle, create the account
 scripts/dev-env.sh up              # build container and the plugin, switch to the development services
 scripts/dev-env.sh run ~/VM.bundle # boot a macOS container from the bundle
 scripts/dev-env.sh down            # stop the development services, restart the installed ones
@@ -40,7 +42,12 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   `~/.container-macos-dev`. The installed container keeps its binaries, data and containers.
   Both register the same launchd service, so `up` stops the installed services and `down`
   starts them again.
-- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install` and `setup`.
+- With `--username`, the first boot after the installation creates that account with automatic
+  login and Remote Login, without the Setup Assistant, adds the public key from `--authorized-key`,
+  and shuts the guest down. The password is prompted for. Without `--username`, the guest opens in
+  a window for the Setup Assistant.
+- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`.
+  `provision` runs only on the first boot after `install`, and writes `Provisioned` into the bundle.
 
 ## Build and install
 

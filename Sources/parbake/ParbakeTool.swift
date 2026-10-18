@@ -12,6 +12,7 @@ struct ParbakeTool: AsyncParsableCommand {
         subcommands: [
             IPSWURL.self,
             Install.self,
+            Provision.self,
             Setup.self,
         ]
     )

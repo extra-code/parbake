@@ -15,6 +15,9 @@ DISK_SIZE=100
 CPUS=4
 MEMORY=8
 RUN_SETUP=1
+USERNAME=""
+FULL_NAME=""
+AUTHORIZED_KEY=""
 
 usage() {
     cat <<EOF
@@ -30,6 +33,11 @@ Options:
   --cpus N           CPUs for installation and setup (default: ${CPUS})
   --memory GIB       Memory for installation and setup (default: ${MEMORY})
   --no-setup         Skip the Setup Assistant window
+  --username NAME    Create this account on the first boot instead of opening the
+                     Setup Assistant (macOS 27 or later); prompts for its password
+  --full-name NAME   Full name of that account (default: the username)
+  --authorized-key PATH
+                     Public key to add to that account's authorized_keys
   -h, --help         Show this help
 EOF
 }
@@ -63,6 +71,18 @@ while [[ $# -gt 0 ]]; do
         --no-setup)
             RUN_SETUP=0
             shift
+            ;;
+        --username)
+            USERNAME="$2"
+            shift 2
+            ;;
+        --full-name)
+            FULL_NAME="$2"
+            shift 2
+            ;;
+        --authorized-key)
+            AUTHORIZED_KEY="$2"
+            shift 2
             ;;
         -h | --help)
             usage
@@ -108,7 +128,13 @@ step "Installing macOS into ${BUNDLE}"
 "${PARBAKE}" install --bundle "${BUNDLE}" --ipsw "${IPSW}" \
     --disk-size "${DISK_SIZE}" --cpus "${CPUS}" --memory "${MEMORY}"
 
-if [[ "${RUN_SETUP}" == 1 ]]; then
+if [[ -n "${USERNAME}" ]]; then
+    step "Provisioning the account ${USERNAME} on the first boot"
+    PROVISION_ARGS=(--bundle "${BUNDLE}" --username "${USERNAME}" --cpus "${CPUS}" --memory "${MEMORY}")
+    [[ -n "${FULL_NAME}" ]] && PROVISION_ARGS+=(--full-name "${FULL_NAME}")
+    [[ -n "${AUTHORIZED_KEY}" ]] && PROVISION_ARGS+=(--authorized-key "${AUTHORIZED_KEY}")
+    "${PARBAKE}" provision "${PROVISION_ARGS[@]}"
+elif [[ "${RUN_SETUP}" == 1 ]]; then
     step "Opening the guest for the Setup Assistant"
     cat <<EOF
 In the window:

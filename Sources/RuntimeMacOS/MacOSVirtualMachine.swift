@@ -31,12 +31,15 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let virtualMachine: VZVirtualMachine
+    /// The MAC address of the guest's network device, which names its DHCP lease.
+    public let macAddress: String
     private let lock = NSLock()
     private var exit: GuestExit?
     private var waiters: [CheckedContinuation<GuestExit, Never>] = []
 
     public init(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64) throws {
         let configuration = try Self.configuration(bundle: bundle, cpus: cpus, memoryInBytes: memoryInBytes)
+        self.macAddress = configuration.networkDevices.first?.macAddress.string ?? ""
         let queue = DispatchQueue(label: "container-runtime-macos.vm")
         self.queue = queue
         self.virtualMachine = queue.sync { VZVirtualMachine(configuration: configuration, queue: queue) }
@@ -109,6 +112,47 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    /// Boots the guest with `options`.
+    ///
+    /// Retries for up to `lockTimeout` while another process, such as the installer that has
+    /// just exited, still holds the lock on the auxiliary storage.
+    public func start(options: VZMacOSVirtualMachineStartOptions, lockTimeout: Duration = .seconds(30)) async throws {
+        // The options are read only on the virtual machine's queue.
+        nonisolated(unsafe) let options = options
+        let deadline = ContinuousClock.now + lockTimeout
+        while true {
+            do {
+                try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
+                    queue.async {
+                        self.virtualMachine.start(options: options) { error in
+                            if let error {
+                                cc.resume(throwing: error)
+                            } else {
+                                cc.resume()
+                            }
+                        }
+                    }
+                }
+                return
+            } catch  where Self.isLockContention(error) && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// Whether `error`, or an error it wraps, is a POSIX `EAGAIN`, which is how
+    /// Virtualization.framework reports an auxiliary storage that another process holds.
+    static func isLockContention(_ error: any Error) -> Bool {
+        var current: NSError? = error as NSError
+        while let nsError = current {
+            if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(EAGAIN) {
+                return true
+            }
+            current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
     }
 
     /// Installs macOS from the restore image at `restoreImageURL` onto the guest's disk.
