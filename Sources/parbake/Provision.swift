@@ -12,8 +12,10 @@ extension ParbakeTool {
             abstract: "Set up a freshly installed macOS 27 or later guest without the Setup Assistant",
             discussion: """
                 Boots the bundle once, headless, with a user account, automatic login and Remote Login, \
-                waits until the account answers over SSH, optionally adds a public key for that account, \
-                and shuts the guest down. Run it on the first boot after `install`: the guest ignores \
+                and waits until the account answers over SSH. In one SSH session it then adds the guest \
+                key that the runtime uses (and a public key from --authorized-key), allows the account to \
+                run /sbin/shutdown without a password, optionally turns Spotlight off and empties the \
+                caches (--tidy), and shuts the guest down. Run it on the first boot after `install`: the guest ignores \
                 the account settings on every later boot.
 
                 The password is read from standard input, or prompted for on a terminal. With \
@@ -21,9 +23,6 @@ extension ParbakeTool {
                 the username, a random one is generated and stored there first.
                 """
         )
-
-        /// The file a provisioned bundle carries; its content is the username.
-        static let markerName = "Provisioned"
 
         @Option(name: .long, help: "Path of the VM bundle to provision")
         var bundle: String
@@ -43,6 +42,9 @@ extension ParbakeTool {
         @Option(name: .long, help: "Keychain service of the stored password")
         var keychainService = GuestCredentials.defaultService
 
+        @Flag(name: .long, help: "Turn Spotlight indexing off and empty the caches before the shutdown")
+        var tidy = false
+
         @Option(name: .long, help: "Number of CPUs during provisioning")
         var cpus: Int = 4
 
@@ -53,24 +55,27 @@ extension ParbakeTool {
         var timeout: Int = 900
 
         func run() async throws {
+            guard username.range(of: "^[a-z_][a-z0-9_-]*$", options: .regularExpression) != nil else {
+                throw ValidationError("the username must be lowercase letters, digits, '_' or '-'")
+            }
             let vmBundle = try MacOSVMBundle(url: URL(fileURLWithPath: bundle))
-            let marker = vmBundle.url.appendingPathComponent(Self.markerName)
-            guard !FileManager.default.fileExists(atPath: marker.path) else {
+            guard !FileManager.default.fileExists(atPath: vmBundle.provisionedURL.path) else {
                 throw ValidationError("\(bundle) is already provisioned")
             }
-            let publicKey = try authorizedKey.map { try String(contentsOfFile: $0, encoding: .utf8) }
+            var publicKeys = try authorizedKey.map { [try Self.publicKey(at: URL(fileURLWithPath: $0))] } ?? []
             let password = try keychain
                 ? GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
                 : readPassword()
 
             let provisioning = GuestProvisioning(fullName: fullName ?? username, username: username, password: password)
             let startOptions = try provisioning.startOptions()
+            publicKeys.append(try Self.createGuestKey(at: vmBundle.guestKeyURL))
 
             let virtualMachine = try MacOSVirtualMachine(bundle: vmBundle, cpus: cpus, memoryInBytes: memory << 30)
             print("Booting \(bundle) to create the account \(username)")
             try await virtualMachine.start(options: startOptions)
 
-            let ssh = GuestSSH(username: username, password: password)
+            let ssh = GuestShell(username: username, credential: .password(password))
             let address: String
             do {
                 address = try await waitForAccount(virtualMachine: virtualMachine, ssh: ssh)
@@ -80,17 +85,15 @@ extension ParbakeTool {
             }
             print("The account answers over SSH at \(address)")
 
-            if let publicKey {
-                let script = "umask 077 && mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-                guard ssh.run(script, on: address, input: publicKey.hasSuffix("\n") ? publicKey : publicKey + "\n") == 0 else {
-                    try? await virtualMachine.forceStop()
-                    throw ValidationError("failed to add the public key to ~/.ssh/authorized_keys")
-                }
-                print("Added the public key to ~/.ssh/authorized_keys")
+            let script = GuestPreparation.script(username: username, password: password, publicKeys: publicKeys, tidy: tidy)
+            let result = ssh.run("/bin/bash -s", on: address, input: script)
+            guard result.output.contains(GuestPreparation.preparedMarker) else {
+                try? await virtualMachine.forceStop()
+                throw ValidationError("preparing the account failed (ssh exit status \(result.status))")
             }
+            print("Added \(publicKeys.count) public key(s), allowed \(username) to shut the guest down\(tidy ? ", turned Spotlight off and emptied the caches" : "")")
 
             print("Shutting the guest down")
-            _ = ssh.run("sudo -S -p '' /sbin/shutdown -h now", on: address, input: password + "\n")
             if await virtualMachine.wait(timeout: .seconds(180)) == nil {
                 try? await virtualMachine.requestStop()
                 if await virtualMachine.wait(timeout: .seconds(60)) == nil {
@@ -99,18 +102,42 @@ extension ParbakeTool {
                 }
             }
 
-            try Data((username + "\n").utf8).write(to: marker)
+            try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)
             print("Provisioned \(bundle) with the account \(username)")
         }
 
+        /// The single-line public key in `url`.
+        static func publicKey(at url: URL) throws -> String {
+            let key = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty, !key.contains("\n"), !key.contains("PARBAKE_") else {
+                throw ValidationError("\(url.path) must hold one public key on one line")
+            }
+            return key
+        }
+
+        /// Creates the guest key pair, or reuses it from an interrupted run, and returns its public key.
+        static func createGuestKey(at url: URL) throws -> String {
+            if !FileManager.default.fileExists(atPath: url.path) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+                process.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", "parbake", "-f", url.path]
+                try process.run()
+                process.waitUntilExit()
+                guard process.terminationStatus == 0 else {
+                    throw ValidationError("ssh-keygen failed to create \(url.path)")
+                }
+            }
+            return try publicKey(at: url.appendingPathExtension("pub"))
+        }
+
         /// Polls the DHCP leases and SSH until the account logs in, the guest stops, or the timeout passes.
-        private func waitForAccount(virtualMachine: MacOSVirtualMachine, ssh: GuestSSH) async throws -> String {
+        private func waitForAccount(virtualMachine: MacOSVirtualMachine, ssh: GuestShell) async throws -> String {
             let deadline = ContinuousClock.now + .seconds(timeout)
             while ContinuousClock.now < deadline {
                 if let exit = virtualMachine.currentExit {
                     throw ValidationError("the guest stopped during provisioning with exit code \(exit.exitCode)")
                 }
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress), ssh.run("true", on: address) == 0 {
+                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress), ssh.run("true", on: address).status == 0 {
                     return address
                 }
                 try await Task.sleep(for: .seconds(5))
@@ -131,61 +158,5 @@ extension ParbakeTool {
             }
             return line
         }
-    }
-}
-
-/// Runs commands in the guest over SSH with password authentication.
-///
-/// ssh reads the password from an askpass helper that prints it from the environment, so it
-/// never appears in an argument list.
-struct GuestSSH {
-    let username: String
-    let password: String
-
-    /// Runs `command` on `address` and returns ssh's exit status; `input` goes to its standard input.
-    func run(_ command: String, on address: String, input: String = "") -> Int32 {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let askpass = directory.appendingPathComponent("askpass")
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-            try Data("#!/bin/sh\nprintf '%s\\n' \"$PARBAKE_SSH_PASSWORD\"\n".utf8).write(to: askpass)
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: askpass.path)
-        } catch {
-            return -1
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = [
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "LogLevel=ERROR",
-            "-o", "ConnectTimeout=5",
-            "-o", "PubkeyAuthentication=no",
-            "-o", "PreferredAuthentications=keyboard-interactive,password",
-            "-o", "NumberOfPasswordPrompts=1",
-            "\(username)@\(address)",
-            command,
-        ]
-        var environment = ProcessInfo.processInfo.environment
-        environment["SSH_ASKPASS"] = askpass.path
-        environment["SSH_ASKPASS_REQUIRE"] = "force"
-        environment["PARBAKE_SSH_PASSWORD"] = password
-        process.environment = environment
-
-        let stdin = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return -1
-        }
-        stdin.fileHandleForWriting.write(Data(input.utf8))
-        try? stdin.fileHandleForWriting.close()
-        process.waitUntilExit()
-        return process.terminationStatus
     }
 }

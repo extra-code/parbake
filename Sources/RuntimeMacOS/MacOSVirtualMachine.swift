@@ -233,16 +233,29 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     }
 
     /// Waits until the guest stops or `timeout` passes, and returns nil on timeout.
+    ///
+    /// Returns as soon as the guest stops.
     public func wait(timeout: Duration) async -> GuestExit? {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
-            if let exit = currentExit {
-                return exit
+        let resumed = NSLock()
+        nonisolated(unsafe) var done = false
+        return await withCheckedContinuation { (cc: CheckedContinuation<GuestExit?, Never>) in
+            let resume: @Sendable (GuestExit?) -> Void = { exit in
+                let first = resumed.withLock {
+                    defer { done = true }
+                    return !done
+                }
+                if first {
+                    cc.resume(returning: exit)
+                }
             }
-            try? await Task.sleep(for: .milliseconds(200))
+            Task { resume(await self.wait()) }
+            Task {
+                try? await Task.sleep(for: timeout)
+                resume(self.currentExit)
+            }
         }
-        return currentExit
     }
+
 
     /// The exit of the guest, or nil while it runs.
     public var currentExit: GuestExit? {

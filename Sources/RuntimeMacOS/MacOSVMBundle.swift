@@ -18,6 +18,10 @@ public struct MacOSVMBundle: Sendable {
     public static let hardwareModelName = "HardwareModel"
     public static let machineIdentifierName = "MachineIdentifier"
 
+    /// Written by provisioning; its content is the username of the guest account.
+    public static let provisionedName = "Provisioned"
+    /// Private key that the host uses to log in to the guest account, written by provisioning.
+    public static let guestKeyName = "GuestKey"
     /// The writable top layer of an instance whose disk image is a link to an ASIF base.
     public static let overlayImageName = "Overlay.asif"
 
@@ -41,6 +45,26 @@ public struct MacOSVMBundle: Sendable {
     public var hardwareModelURL: URL { url.appendingPathComponent(Self.hardwareModelName) }
     public var machineIdentifierURL: URL { url.appendingPathComponent(Self.machineIdentifierName) }
     public var overlayImageURL: URL { url.appendingPathComponent(Self.overlayImageName) }
+    public var provisionedURL: URL { url.appendingPathComponent(Self.provisionedName) }
+    public var guestKeyURL: URL { url.appendingPathComponent(Self.guestKeyName) }
+
+    /// The guest account's username when provisioning created it, or nil.
+    public var provisionedUsername: String? {
+        guard let content = try? String(contentsOf: provisionedURL, encoding: .utf8) else {
+            return nil
+        }
+        let username = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return username.isEmpty ? nil : username
+    }
+
+    /// A shell that logs in to the guest with the provisioned account and the guest key, or nil
+    /// when the bundle has neither.
+    public var guestShell: GuestShell? {
+        guard let username = provisionedUsername, FileManager.default.fileExists(atPath: guestKeyURL.path) else {
+            return nil
+        }
+        return GuestShell(username: username, credential: .key(guestKeyURL))
+    }
 
     /// The format of the bundle's disk image.
     public func diskFormat() throws -> DiskFormat {
@@ -139,11 +163,15 @@ public struct MacOSVMBundle: Sendable {
     /// With an ASIF disk image, the instance links to that image, reads it read-only and writes
     /// into a new ASIF overlay that is bound to the image's layer UUID. With a raw disk image,
     /// the instance's disk is an APFS clone. The auxiliary storage and hardware model are APFS
-    /// clones. The machine identifier is new, so every instance has its own serial number and
-    /// platform UUID.
+    /// clones, and so are the provisioning marker and the guest key when the bundle has them. The
+    /// machine identifier is new, so every instance has its own serial number and platform UUID.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Self.cloneFiles([Self.auxiliaryStorageName, Self.hardwareModelName], from: url, to: destination)
+        let provisioningFiles = [Self.provisionedName, Self.guestKeyName].filter {
+            FileManager.default.fileExists(atPath: url.appendingPathComponent($0).path)
+        }
+        try Self.cloneFiles(provisioningFiles, from: url, to: destination)
         try VZMacMachineIdentifier().dataRepresentation.write(to: destination.appendingPathComponent(Self.machineIdentifierName))
         guard #available(macOS 27, *), try diskFormat() == .asif else {
             try Self.cloneFiles([Self.diskImageName], from: url, to: destination)

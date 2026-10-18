@@ -18,6 +18,8 @@ actor RuntimeService {
     static let bundleLabel = "runtime-macos.bundle"
     /// The directory in the container root that holds the container's instance of the bundle.
     static let vmDirectoryName = "vm"
+    /// The least time a guest gets to finish a shutdown it accepted over SSH.
+    static let minimumShutdownTimeout: Duration = .seconds(60)
 
     enum State {
         case created
@@ -34,6 +36,7 @@ actor RuntimeService {
     private var state: State = .created
     private var configuration: ContainerConfiguration?
     private var virtualMachine: MacOSVirtualMachine?
+    private var bundle: MacOSVMBundle?
     private var startedDate: Date?
 
     init(root: URL, connection: xpc_connection_t, log: Logger) {
@@ -82,6 +85,7 @@ actor RuntimeService {
         )
         self.configuration = configuration
         self.virtualMachine = virtualMachine
+        self.bundle = bundle
         self.state = .prepared
         log.info("prepared macOS guest", metadata: ["bundle": "\(bundle.url.path)", "source": "\(source)"])
         return message.reply()
@@ -155,7 +159,7 @@ actor RuntimeService {
         return message.reply()
     }
 
-    /// Stops the guest forcibly on SIGKILL and asks it to shut down on any other signal.
+    /// Stops the guest forcibly on SIGKILL and shuts it down on any other signal.
     @Sendable
     func kill(_ message: XPCMessage) async throws -> XPCMessage {
         let id = try message.id()
@@ -170,7 +174,7 @@ actor RuntimeService {
 
         if Self.isKill(signal) {
             try await virtualMachine.forceStop()
-        } else {
+        } else if !shutDownOverSSH(virtualMachine) {
             try await virtualMachine.requestStop()
         }
         return message.reply()
@@ -222,16 +226,54 @@ actor RuntimeService {
         return (configuration, virtualMachine)
     }
 
+    /// Shuts the guest down over SSH, or asks it to shut down like a press of the power button
+    /// when SSH is not available, and stops it forcibly once the timeout passes.
+    ///
+    /// A shutdown accepted over SSH gets at least `minimumShutdownTimeout`.
     private func stopGuest(_ virtualMachine: MacOSVirtualMachine, timeout: Duration) async throws {
-        do {
-            try await virtualMachine.requestStop()
-        } catch {
-            log.warning("guest rejected the stop request", metadata: ["error": "\(error)"])
+        var timeout = timeout
+        if shutDownOverSSH(virtualMachine) {
+            timeout = max(timeout, Self.minimumShutdownTimeout)
+        } else {
+            do {
+                try await virtualMachine.requestStop()
+            } catch {
+                log.warning("guest rejected the stop request", metadata: ["error": "\(error)"])
+            }
         }
         if await virtualMachine.wait(timeout: timeout) == nil {
             log.info("guest did not shut down in time, stopping it")
             try await virtualMachine.forceStop()
         }
+    }
+
+    /// Runs `shutdown -h now` in the guest with the provisioned account and the guest key;
+    /// returns whether the guest accepted it.
+    private func shutDownOverSSH(_ virtualMachine: MacOSVirtualMachine) -> Bool {
+        guard let shell = bundle?.guestShell else {
+            log.info("bundle has no guest key, asking the guest to shut down")
+            return false
+        }
+        guard let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) else {
+            log.warning("guest has no DHCP lease, asking it to shut down")
+            return false
+        }
+        let accepted = "parbake: shutting down"
+        // shutdown ends sshd, so the guest reports the acceptance before it runs shutdown.
+        let result = shell.run(
+            "sudo -n -l /sbin/shutdown >/dev/null && echo '\(accepted)' && sudo -n /sbin/shutdown -h now >/dev/null",
+            on: address)
+        guard result.output.contains(accepted) else {
+            log.warning(
+                "guest refused the shutdown over SSH",
+                metadata: [
+                    "address": "\(address)", "status": "\(result.status)",
+                    "error": "\(result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))",
+                ])
+            return false
+        }
+        log.info("guest accepted the shutdown over SSH", metadata: ["address": "\(address)"])
+        return true
     }
 
     private func guestStopped(_ exit: GuestExit) {

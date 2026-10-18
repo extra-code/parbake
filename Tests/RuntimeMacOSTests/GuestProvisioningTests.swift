@@ -145,3 +145,43 @@ struct GuestCredentialsTests {
         #expect(output.trimmingCharacters(in: .newlines) == "open-to-every-app")
     }
 }
+
+struct GuestPreparationTests {
+    private let script = GuestPreparation.script(
+        username: "ci", password: "pa$$ 'word\\x", publicKeys: ["ssh-ed25519 AAAA one", "ssh-ed25519 BBBB two"], tidy: true)
+
+    @Test
+    func testTheScriptParses() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-n"]
+        let stdin = Pipe()
+        process.standardInput = stdin
+        try process.run()
+        stdin.fileHandleForWriting.write(Data(script.utf8))
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
+    @Test
+    func testTheHeredocsCarryKeysAndPasswordVerbatim() {
+        let lines = script.components(separatedBy: "\n")
+        #expect(lines.contains("ssh-ed25519 AAAA one"))
+        #expect(lines.contains("ssh-ed25519 BBBB two"))
+        #expect(lines.contains("pa$$ 'word\\x"))
+        #expect(lines.contains("PARBAKE_KEYS"))
+        #expect(lines.contains("PARBAKE_PASSWORD"))
+        #expect(lines.contains("PARBAKE_ROOT"))
+    }
+
+    @Test
+    func testTheShutdownComesLastAndTidyIsOptional() {
+        let lines = script.components(separatedBy: "\n").filter { !$0.isEmpty }
+        #expect(lines.last == "sudo -n /sbin/shutdown -h now >/dev/null")
+        #expect(script.contains("mdutil -a -i off"))
+        let plain = GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false)
+        #expect(!plain.contains("mdutil"))
+        #expect(!plain.contains("Caches"))
+    }
+}

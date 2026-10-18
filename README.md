@@ -15,7 +15,10 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
   and writes into its own DiskImageKit overlay, which refuses to stack on any other base. With a raw disk
   image, the instance is an APFS clone.
 - The init process of the container is the guest: `container start` boots it, and the container exits when the guest shuts down.
-- `container stop` asks the guest to shut down and stops it forcibly once the timeout passes; `container kill -s KILL` stops it at once.
+- `container stop` shuts a provisioned guest down over SSH with its `GuestKey` and waits at least 60 seconds
+  for it, whatever `--time` says; a guest without that key gets a power-button request. Either way the guest
+  is stopped forcibly once the wait passes. `container kill` shuts the guest down the same way, and
+  `container kill -s KILL` stops it at once.
 - Networking uses Virtualization.framework NAT.
 
 ## Requirements
@@ -47,9 +50,11 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   Both register the same launchd service, so `up` stops the installed services and `down`
   starts them again.
 - With `--username`, the first boot after the installation creates that account with automatic
-  login and Remote Login, without the Setup Assistant, adds the public key from `--authorized-key`,
-  and shuts the guest down. The password is prompted for. Without `--username`, the guest opens in
-  a window for the Setup Assistant.
+  login and Remote Login, without the Setup Assistant. One SSH session then adds the public key from
+  `--authorized-key` and the bundle's own `GuestKey`, allows the account to run `/sbin/shutdown`
+  without a password (`/etc/sudoers.d/parbake`), turns Spotlight indexing off and empties the
+  caches with `--tidy`, and shuts the guest down. The password is prompted for. Without
+  `--username`, the guest opens in a window for the Setup Assistant.
 - On a CI host, add `--keychain`: the password comes from the login keychain (generic password,
   service `container-runtime-macos.guest`, account = username). When the keychain has none,
   provisioning generates a random one and stores it there, so no person types or sees it. Read it

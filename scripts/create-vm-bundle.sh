@@ -19,6 +19,7 @@ USERNAME=""
 FULL_NAME=""
 AUTHORIZED_KEY=""
 KEYCHAIN=0
+TIDY=0
 
 usage() {
     cat <<EOF
@@ -41,6 +42,8 @@ Options:
                      Public key to add to that account's authorized_keys
   --keychain         Take that account's password from the login keychain instead of
                      prompting; generates and stores a random one when there is none
+  --tidy             Turn Spotlight indexing off and empty the caches before the
+                     guest shuts down after provisioning
   -h, --help         Show this help
 EOF
 }
@@ -89,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --keychain)
             KEYCHAIN=1
+            shift
+            ;;
+        --tidy)
+            TIDY=1
             shift
             ;;
         -h | --help)
@@ -141,6 +148,7 @@ if [[ -n "${USERNAME}" ]]; then
     [[ -n "${FULL_NAME}" ]] && PROVISION_ARGS+=(--full-name "${FULL_NAME}")
     [[ -n "${AUTHORIZED_KEY}" ]] && PROVISION_ARGS+=(--authorized-key "${AUTHORIZED_KEY}")
     [[ "${KEYCHAIN}" == 1 ]] && PROVISION_ARGS+=(--keychain)
+    [[ "${TIDY}" == 1 ]] && PROVISION_ARGS+=(--tidy)
     "${PARBAKE}" provision "${PROVISION_ARGS[@]}"
 elif [[ "${RUN_SETUP}" == 1 ]]; then
     step "Opening the guest for the Setup Assistant"
