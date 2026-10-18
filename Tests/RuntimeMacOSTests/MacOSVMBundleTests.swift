@@ -159,3 +159,42 @@ struct InstanceTests {
         #expect(attributes[.type] as? FileAttributeType == .typeRegular)
     }
 }
+
+struct ResetOverlayTests {
+    private func makeASIFBundle() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vm-base-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for name in MacOSVMBundle.fileNames where name != MacOSVMBundle.diskImageName {
+            try Data(name.utf8).write(to: directory.appendingPathComponent(name))
+        }
+        try VZMacMachineIdentifier().dataRepresentation.write(to: directory.appendingPathComponent(MacOSVMBundle.machineIdentifierName))
+        try MacOSVMBundle.createDiskImage(
+            at: directory.appendingPathComponent(MacOSVMBundle.diskImageName), sizeInBytes: 1 << 30, format: .asif)
+        return directory
+    }
+
+    @Test
+    func testAReinstalledBaseReportsAnIncompatibleOverlayAndResetStartsItOver() throws {
+        guard #available(macOS 27, *) else { return }
+        let base = try makeASIFBundle()
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("vm-instance-\(UUID())")
+        defer {
+            try? FileManager.default.removeItem(at: base)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        let source = try MacOSVMBundle(url: base)
+        let instance = try source.instance(at: destination)
+        let identifier = try Data(contentsOf: instance.machineIdentifierURL)
+
+        // A new install replaces the base disk image at the same path, with a new layer UUID.
+        try FileManager.default.removeItem(at: source.diskImageURL)
+        try MacOSVMBundle.createDiskImage(at: source.diskImageURL, sizeInBytes: 1 << 30, format: .asif)
+        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try instance.storageDeviceAttachment() }
+
+        try instance.resetOverlay(from: source)
+
+        _ = try instance.storageDeviceAttachment()
+        #expect(try Data(contentsOf: instance.machineIdentifierURL) == identifier)
+        #expect(try Data(contentsOf: instance.auxiliaryStorageURL) == Data(MacOSVMBundle.auxiliaryStorageName.utf8))
+    }
+}

@@ -91,6 +91,10 @@ container run -d \
 ```
 
 - `runtime-macos.bundle` names the VM bundle to boot.
+- `runtime-macos.on-incompatible-overlay` decides what happens when a container's overlay no longer
+  stacks on the bundle's disk image, for example after the bundle was installed again: `fail`
+  (default) stops the start with an error, `discard` drops the overlay and the guest's writes and
+  starts the instance over on the bundle, keeping its machine identifier.
 - The image reference is required by the CLI and otherwise unused.
 - The guest gets at least 4 GiB of memory.
 

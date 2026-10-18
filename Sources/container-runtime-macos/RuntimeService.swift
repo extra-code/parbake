@@ -19,6 +19,14 @@ import vmnet
 actor RuntimeService {
     /// The container label that names the installed macOS VM bundle to boot.
     static let bundleLabel = "runtime-macos.bundle"
+    /// The container label that decides what happens when the instance's overlay no longer stacks
+    /// on the bundle's disk image: `fail` (default) or `discard`.
+    static let incompatibleOverlayLabel = "runtime-macos.on-incompatible-overlay"
+
+    enum IncompatibleOverlayPolicy: String {
+        case fail
+        case discard
+    }
     /// The directory in the container root that holds the container's instance of the bundle.
     static let vmDirectoryName = "vm"
     /// The least time a guest gets to finish a shutdown it accepted over SSH.
@@ -80,21 +88,47 @@ actor RuntimeService {
             )
         }
 
+        let policyValue = configuration.labels[Self.incompatibleOverlayLabel] ?? IncompatibleOverlayPolicy.fail.rawValue
+        guard let policy = IncompatibleOverlayPolicy(rawValue: policyValue) else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "\(Self.incompatibleOverlayLabel) must be fail or discard, got \(policyValue)"
+            )
+        }
+
         let vmDirectory = root.appendingPathComponent(Self.vmDirectoryName)
+        let sourceBundle = try MacOSVMBundle(url: URL(fileURLWithPath: source))
         let bundle =
             FileManager.default.fileExists(atPath: vmDirectory.path)
             ? try MacOSVMBundle(url: vmDirectory)
-            : try MacOSVMBundle(url: URL(fileURLWithPath: source)).instance(at: vmDirectory)
+            : try sourceBundle.instance(at: vmDirectory)
 
         let network = try await allocateNetwork(message, configuration: configuration)
         let virtualMachine: MacOSVirtualMachine
         do {
-            virtualMachine = try MacOSVirtualMachine(
-                bundle: bundle,
-                cpus: configuration.resources.cpus,
-                memoryInBytes: configuration.resources.memoryInBytes,
-                network: network
-            )
+            do {
+                virtualMachine = try MacOSVirtualMachine(
+                    bundle: bundle,
+                    cpus: configuration.resources.cpus,
+                    memoryInBytes: configuration.resources.memoryInBytes,
+                    network: network
+                )
+            } catch let error as MacOSVMBundle.IncompatibleOverlayError {
+                guard policy == .discard, #available(macOS 27, *) else {
+                    throw ContainerizationError(
+                        .invalidState,
+                        message: "\(error); set --label \(Self.incompatibleOverlayLabel)=discard to start the instance over"
+                    )
+                }
+                log.warning("discarding the instance's overlay, it no longer stacks on the bundle", metadata: ["reason": "\(error.reason)"])
+                try bundle.resetOverlay(from: sourceBundle)
+                virtualMachine = try MacOSVirtualMachine(
+                    bundle: bundle,
+                    cpus: configuration.resources.cpus,
+                    memoryInBytes: configuration.resources.memoryInBytes,
+                    network: network
+                )
+            }
         } catch {
             releaseNetwork()
             throw error

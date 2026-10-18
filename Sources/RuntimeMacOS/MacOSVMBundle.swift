@@ -27,6 +27,18 @@ public struct MacOSVMBundle: Sendable {
 
     static let fileNames = [diskImageName, auxiliaryStorageName, hardwareModelName, machineIdentifierName]
 
+    /// The overlay of an instance no longer stacks on its base, for example after the base bundle
+    /// was installed again.
+    public struct IncompatibleOverlayError: Error, CustomStringConvertible {
+        public let bundle: URL
+        public let base: URL
+        public let reason: String
+
+        public var description: String {
+            "the overlay in \(bundle.path) does not stack on \(base.path): \(reason)"
+        }
+    }
+
     public let url: URL
 
     /// Opens the bundle at `url` and checks that every file of the layout exists.
@@ -88,6 +100,8 @@ public struct MacOSVMBundle: Sendable {
             let base = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
             let overlay = try DiskImage(opening: .open(url: overlayImageURL))
             return try VZDiskImageStorageDeviceAttachment(diskImage: try base.appending(overlay))
+        } catch let error as IncompatibleStackingError {
+            throw IncompatibleOverlayError(bundle: url, base: diskImageURL.resolvingSymlinksInPath(), reason: error.localizedDescription)
         } catch {
             throw ContainerizationError(
                 .invalidState,
@@ -177,6 +191,32 @@ public struct MacOSVMBundle: Sendable {
             try Self.cloneFiles([Self.diskImageName], from: url, to: destination)
             return try MacOSVMBundle(url: destination)
         }
+        try linkBaseAndCreateOverlay(in: destination)
+        return try MacOSVMBundle(url: destination)
+    }
+
+    /// Discards this instance's overlay and starts it over on `source`: the disk image link, the
+    /// auxiliary storage and the overlay are made anew from `source`, the machine identifier stays.
+    ///
+    /// The guest's writes since the instance was created are lost.
+    @available(macOS 27, *)
+    public func resetOverlay(from source: MacOSVMBundle) throws {
+        guard try source.diskFormat() == .asif else {
+            throw ContainerizationError(.invalidArgument, message: "\(source.url.path) has no ASIF disk image to stack an overlay on")
+        }
+        for name in [Self.overlayImageName, Self.diskImageName, Self.auxiliaryStorageName] {
+            let file = url.appendingPathComponent(name)
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: file.path)) != nil || FileManager.default.fileExists(atPath: file.path) {
+                try FileManager.default.removeItem(at: file)
+            }
+        }
+        try Self.cloneFiles([Self.auxiliaryStorageName], from: source.url, to: url)
+        try source.linkBaseAndCreateOverlay(in: url)
+    }
+
+    /// Links this bundle's disk image as `Disk.img` in `destination` and creates an ASIF overlay on it there.
+    @available(macOS 27, *)
+    private func linkBaseAndCreateOverlay(in destination: URL) throws {
         let diskImageLink = destination.appendingPathComponent(Self.diskImageName)
         try FileManager.default.createSymbolicLink(at: diskImageLink, withDestinationURL: diskImageURL.resolvingSymlinksInPath())
         let overlayURL = destination.appendingPathComponent(Self.overlayImageName)
@@ -186,7 +226,6 @@ public struct MacOSVMBundle: Sendable {
         } catch {
             throw ContainerizationError(.internalError, message: "failed to create \(overlayURL.path)", cause: error)
         }
-        return try MacOSVMBundle(url: destination)
     }
 
     /// Clones the bundle into `destination` with APFS copy-on-write clones.
