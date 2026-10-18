@@ -18,6 +18,7 @@ RUN_SETUP=1
 USERNAME=""
 FULL_NAME=""
 AUTHORIZED_KEY=""
+KEYCHAIN=0
 
 usage() {
     cat <<EOF
@@ -38,6 +39,8 @@ Options:
   --full-name NAME   Full name of that account (default: the username)
   --authorized-key PATH
                      Public key to add to that account's authorized_keys
+  --keychain         Take that account's password from the login keychain instead of
+                     prompting; generates and stores a random one when there is none
   -h, --help         Show this help
 EOF
 }
@@ -83,6 +86,10 @@ while [[ $# -gt 0 ]]; do
         --authorized-key)
             AUTHORIZED_KEY="$2"
             shift 2
+            ;;
+        --keychain)
+            KEYCHAIN=1
+            shift
             ;;
         -h | --help)
             usage
@@ -133,6 +140,7 @@ if [[ -n "${USERNAME}" ]]; then
     PROVISION_ARGS=(--bundle "${BUNDLE}" --username "${USERNAME}" --cpus "${CPUS}" --memory "${MEMORY}")
     [[ -n "${FULL_NAME}" ]] && PROVISION_ARGS+=(--full-name "${FULL_NAME}")
     [[ -n "${AUTHORIZED_KEY}" ]] && PROVISION_ARGS+=(--authorized-key "${AUTHORIZED_KEY}")
+    [[ "${KEYCHAIN}" == 1 ]] && PROVISION_ARGS+=(--keychain)
     "${PARBAKE}" provision "${PROVISION_ARGS[@]}"
 elif [[ "${RUN_SETUP}" == 1 ]]; then
     step "Opening the guest for the Setup Assistant"

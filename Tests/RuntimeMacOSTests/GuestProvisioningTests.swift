@@ -89,3 +89,59 @@ struct GuestProvisioningTests {
         }
     }
 }
+
+struct GuestCredentialsTests {
+    @Test
+    func testGeneratedPasswordsUseTheAlphabetAndDiffer() throws {
+        let first = try GuestCredentials.generatePassword()
+        let second = try GuestCredentials.generatePassword()
+        #expect(first.count == 32)
+        #expect(first.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) })
+        #expect(first != second)
+    }
+
+    @Test
+    func testStoresReplacesAndRemovesAPassword() throws {
+        let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)")
+        defer { try? credentials.remove(for: "ci") }
+        #expect(try credentials.password(for: "ci") == nil)
+
+        let generated = try credentials.passwordCreatingIfNeeded(for: "ci")
+        #expect(try credentials.password(for: "ci") == generated)
+        #expect(try credentials.passwordCreatingIfNeeded(for: "ci") == generated)
+
+        try credentials.store("replaced", for: "ci")
+        #expect(try credentials.password(for: "ci") == "replaced")
+
+        try credentials.remove(for: "ci")
+        #expect(try credentials.password(for: "ci") == nil)
+    }
+
+    @Test
+    func testTheSecurityToolReadsThePasswordWithoutAPrompt() throws {
+        let service = "container-runtime-macos.test.\(UUID().uuidString)"
+        let credentials = GuestCredentials(service: service)
+        defer { try? credentials.remove(for: "ci") }
+        try credentials.store("open-to-every-app", for: "ci")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-s", service, "-a", "ci", "-w"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        // A keychain prompt would block; the deadline turns it into a failure.
+        let deadline = Date().addingTimeInterval(10)
+        while process.isRunning && Date() < deadline {
+            usleep(50_000)
+        }
+        if process.isRunning {
+            process.terminate()
+        }
+        process.waitUntilExit()
+        let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        #expect(process.terminationStatus == 0)
+        #expect(output.trimmingCharacters(in: .newlines) == "open-to-every-app")
+    }
+}

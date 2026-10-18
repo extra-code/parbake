@@ -16,7 +16,9 @@ extension ParbakeTool {
                 and shuts the guest down. Run it on the first boot after `install`: the guest ignores \
                 the account settings on every later boot.
 
-                The password is read from standard input, or prompted for on a terminal.
+                The password is read from standard input, or prompted for on a terminal. With \
+                --keychain it comes from the login keychain instead; when the keychain has none for \
+                the username, a random one is generated and stored there first.
                 """
         )
 
@@ -35,6 +37,12 @@ extension ParbakeTool {
         @Option(name: .long, help: "Public key file to add to the account's authorized_keys")
         var authorizedKey: String?
 
+        @Flag(name: .long, help: "Take the password from the login keychain, generating and storing one when it has none")
+        var keychain = false
+
+        @Option(name: .long, help: "Keychain service of the stored password")
+        var keychainService = GuestCredentials.defaultService
+
         @Option(name: .long, help: "Number of CPUs during provisioning")
         var cpus: Int = 4
 
@@ -51,7 +59,9 @@ extension ParbakeTool {
                 throw ValidationError("\(bundle) is already provisioned")
             }
             let publicKey = try authorizedKey.map { try String(contentsOfFile: $0, encoding: .utf8) }
-            let password = try readPassword()
+            let password = try keychain
+                ? GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
+                : readPassword()
 
             let provisioning = GuestProvisioning(fullName: fullName ?? username, username: username, password: password)
             let startOptions = try provisioning.startOptions()

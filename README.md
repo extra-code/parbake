@@ -46,6 +46,13 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   login and Remote Login, without the Setup Assistant, adds the public key from `--authorized-key`,
   and shuts the guest down. The password is prompted for. Without `--username`, the guest opens in
   a window for the Setup Assistant.
+- On a CI host, add `--keychain`: the password comes from the login keychain (generic password,
+  service `container-runtime-macos.guest`, account = username). When the keychain has none,
+  provisioning generates a random one and stores it there, so no person types or sees it. Read it
+  back with `security find-generic-password -s container-runtime-macos.guest -a ci -w`. Every
+  access goes through `/usr/bin/security`, which creates the entry with `-A`, so a rebuilt or updated
+  `parbake` never waits on a keychain dialog. The login keychain must be unlocked, which a LaunchAgent in a
+  logged-in session has and a LaunchDaemon has not.
 - `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`.
   `provision` runs only on the first boot after `install`, and writes `Provisioned` into the bundle.
 
