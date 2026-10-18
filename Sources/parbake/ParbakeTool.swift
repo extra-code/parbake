@@ -10,6 +10,7 @@ struct ParbakeTool: AsyncParsableCommand {
         abstract: "Create macOS VM bundles for container-runtime-macos",
         version: "0.1.0",
         subcommands: [
+            AgentProbe.self,
             IPSWURL.self,
             Install.self,
             Provision.self,

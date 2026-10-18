@@ -10,6 +10,7 @@ let package = Package(
     products: [
         .executable(name: "container-runtime-macos", targets: ["container-runtime-macos"]),
         .executable(name: "parbake", targets: ["parbake"]),
+        .executable(name: "parbake-agent", targets: ["parbake-agent"]),
     ],
     dependencies: [
         // apple/container with the runtime-plugin commits that provide `[runtimeConfig]` in the plugin config.
@@ -19,6 +20,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.10.1"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
+        // The guest agent serves containerization's SandboxContext service over vsock.
+        .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
+        .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.0"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
+        .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.36.0"),
     ],
     targets: [
         .executableTarget(
@@ -42,6 +48,20 @@ let package = Package(
             dependencies: [
                 "RuntimeMacOS",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+            ]
+        ),
+        .executableTarget(
+            name: "parbake-agent",
+            dependencies: [
+                .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]
         ),
         .target(

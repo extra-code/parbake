@@ -30,6 +30,11 @@ public struct GuestShell: Sendable {
     /// Runs `command` on `address` and returns ssh's exit status, the command's standard output
     /// and ssh's standard error; `input` goes to its standard input.
     public func run(_ command: String, on address: String, input: String = "") -> Result {
+        run(command, on: address, input: Data(input.utf8))
+    }
+
+    /// Runs `command` on `address` with `input` as its standard input, which may be binary.
+    public func run(_ command: String, on address: String, input: Data) -> Result {
         let failed = Result(status: -1, output: "", errorOutput: "")
         var arguments = [
             "-o", "StrictHostKeyChecking=no",
@@ -90,7 +95,7 @@ public struct GuestShell: Sendable {
         } catch {
             return failed
         }
-        stdin.fileHandleForWriting.write(Data(input.utf8))
+        stdin.fileHandleForWriting.write(input)
         try? stdin.fileHandleForWriting.close()
         // Drains standard error on its own thread, so neither pipe fills while the other is read.
         nonisolated(unsafe) var errorData = Data()

@@ -216,6 +216,52 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         progress(1)
     }
 
+    /// Connects to `port` on the guest's vsock device and returns the connection as a file handle.
+    ///
+    /// The handle does not close the descriptor when it is released: the consumer that takes the
+    /// descriptor over, such as a NIO channel, closes it.
+    public func connect(toPort port: UInt32) async throws -> FileHandle {
+        try await withCheckedThrowingContinuation { (cc: CheckedContinuation<FileHandle, any Error>) in
+            queue.async {
+                guard let socketDevice = self.virtualMachine.socketDevices.first as? VZVirtioSocketDevice else {
+                    cc.resume(throwing: ContainerizationError(.invalidState, message: "the virtual machine has no vsock device"))
+                    return
+                }
+                socketDevice.connect(toPort: port) { result in
+                    switch result {
+                    case .success(let connection):
+                        let descriptor = dup(connection.fileDescriptor)
+                        connection.close()
+                        guard descriptor >= 0 else {
+                            cc.resume(throwing: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                            return
+                        }
+                        cc.resume(returning: FileHandle(fileDescriptor: descriptor, closeOnDealloc: false))
+                    case .failure(let error):
+                        cc.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Waits for the guest to connect to `port` on the host and returns the first connection as a
+    /// file handle that closes its descriptor when released; the listener is removed afterwards.
+    ///
+    /// The listener is in place when this returns its task's first suspension, so start it before
+    /// asking the guest to connect.
+    public func accept(onPort port: UInt32, timeout: Duration) async throws -> FileHandle {
+        let acceptor = VsockAcceptor()
+        guard let socketDevice = queue.sync(execute: { virtualMachine.socketDevices.first as? VZVirtioSocketDevice }) else {
+            throw ContainerizationError(.invalidState, message: "the virtual machine has no vsock device")
+        }
+        let listener = VZVirtioSocketListener()
+        listener.delegate = acceptor
+        queue.sync { socketDevice.setSocketListener(listener, forPort: port) }
+        defer { queue.sync { socketDevice.removeSocketListener(forPort: port) } }
+        return try await acceptor.connection(timeout: timeout, port: port)
+    }
+
     /// Asks the guest to shut down, like a press of the power button.
     public func requestStop() async throws {
         try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
@@ -318,5 +364,62 @@ extension MacOSVirtualMachine: VZVirtualMachineDelegate {
 
     public func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: any Error) {
         finish(exitCode: Self.errorExitCode)
+    }
+}
+
+/// Hands the first connection a vsock listener accepts to one waiting task.
+private final class VsockAcceptor: NSObject, VZVirtioSocketListenerDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<FileHandle, any Error>?
+    private var accepted: FileHandle?
+    private var finished = false
+
+    func listener(
+        _ listener: VZVirtioSocketListener, shouldAcceptNewConnection connection: VZVirtioSocketConnection,
+        from socketDevice: VZVirtioSocketDevice
+    ) -> Bool {
+        let descriptor = dup(connection.fileDescriptor)
+        connection.close()
+        guard descriptor >= 0 else {
+            return false
+        }
+        finish(.success(FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)))
+        return true
+    }
+
+    func connection(timeout: Duration, port: UInt32) async throws -> FileHandle {
+        try await withCheckedThrowingContinuation { cc in
+            let ready: FileHandle? = lock.withLock {
+                if let accepted {
+                    return accepted
+                }
+                continuation = cc
+                return nil
+            }
+            if let ready {
+                cc.resume(returning: ready)
+                return
+            }
+            Task {
+                try? await Task.sleep(for: timeout)
+                self.finish(.failure(ContainerizationError(.timeout, message: "the guest did not connect to vsock port \(port)")))
+            }
+        }
+    }
+
+    private func finish(_ result: Result<FileHandle, any Error>) {
+        let waiting: CheckedContinuation<FileHandle, any Error>? = lock.withLock {
+            guard !finished else {
+                return nil
+            }
+            if continuation == nil, case .success(let handle) = result {
+                accepted = handle
+                return nil
+            }
+            finished = true
+            defer { continuation = nil }
+            return continuation
+        }
+        waiting?.resume(with: result)
     }
 }

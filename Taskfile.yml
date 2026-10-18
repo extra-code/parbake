@@ -46,6 +46,7 @@ tasks:
     cmds:
       - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/{{.NAME}}"
       - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/parbake"
+      - codesign {{.CODESIGN_OPTS}} "{{.BIN_DIR}}/parbake-agent"
 
   bin-path:
     desc: Print the build output directory

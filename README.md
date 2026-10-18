@@ -25,6 +25,8 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
   requests with that address, the gateway and the DNS servers. The guest image needs no change. A
   container without a network, or a host earlier than macOS 26, uses Virtualization.framework NAT.
 
+How the plugin, the guest agent and Apple `container` work together: [docs/architecture.md](docs/architecture.md).
+
 ## Requirements
 
 - Mac with Apple silicon, macOS 15 or later, Xcode 27 (macOS 27 SDK)
@@ -66,7 +68,8 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   access goes through `/usr/bin/security`, which creates the entry with `-A`, so a rebuilt or updated
   `parbake` never waits on a keychain dialog. The login keychain must be unlocked, which a LaunchAgent in a
   logged-in session has and a LaunchDaemon has not.
-- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`.
+- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`,
+  plus `agent-probe`, which checks a development build of the guest agent against a provisioned bundle.
   `provision` runs only on the first boot after `install`, and writes `Provisioned` into the bundle.
 
 ## Build and install
