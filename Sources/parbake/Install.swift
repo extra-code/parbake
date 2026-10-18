@@ -21,6 +21,9 @@ extension ParbakeTool {
         @Option(name: .long, help: "Size of the sparse disk image in GiB")
         var diskSize: UInt64 = 100
 
+        @Option(name: .long, help: "Format of the disk image: asif (macOS 27 or later host) or raw (default: asif where supported)")
+        var diskFormat: MacOSVMBundle.DiskFormat = .preferred
+
         @Option(name: .long, help: "Number of CPUs during the installation")
         var cpus: Int = 4
 
@@ -36,11 +39,12 @@ extension ParbakeTool {
                 throw ValidationError("this host cannot run macOS \(restoreImage.operatingSystemVersion.string)")
             }
 
-            print("Creating \(bundle) for macOS \(restoreImage.operatingSystemVersion.string) (\(restoreImage.buildVersion))")
+            print("Creating \(bundle) with a \(diskFormat.rawValue) disk for macOS \(restoreImage.operatingSystemVersion.string) (\(restoreImage.buildVersion))")
             let vmBundle = try MacOSVMBundle.create(
                 at: URL(fileURLWithPath: bundle),
                 hardwareModel: requirements.hardwareModel,
-                diskSizeInBytes: diskSize << 30
+                diskSizeInBytes: diskSize << 30,
+                diskFormat: diskFormat
             )
 
             let virtualMachine = try MacOSVirtualMachine(
@@ -62,3 +66,5 @@ extension ParbakeTool {
 extension OperatingSystemVersion {
     var string: String { "\(majorVersion).\(minorVersion).\(patchVersion)" }
 }
+
+extension MacOSVMBundle.DiskFormat: ExpressibleByArgument {}

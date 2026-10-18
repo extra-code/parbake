@@ -83,7 +83,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
             VZVirtualMachineConfiguration.maximumAllowedMemorySize
         )
 
-        let disk = try VZDiskImageStorageDeviceAttachment(url: bundle.diskImageURL, readOnly: false)
+        let disk = try bundle.storageDeviceAttachment()
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: disk)]
 
         let network = VZVirtioNetworkDeviceConfiguration()

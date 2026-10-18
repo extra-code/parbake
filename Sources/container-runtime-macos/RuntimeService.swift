@@ -16,7 +16,7 @@ import RuntimeMacOS
 actor RuntimeService {
     /// The container label that names the installed macOS VM bundle to boot.
     static let bundleLabel = "runtime-macos.bundle"
-    /// The directory in the container root that holds the container's clone of the bundle.
+    /// The directory in the container root that holds the container's instance of the bundle.
     static let vmDirectoryName = "vm"
 
     enum State {
@@ -73,7 +73,7 @@ actor RuntimeService {
         let bundle =
             FileManager.default.fileExists(atPath: vmDirectory.path)
             ? try MacOSVMBundle(url: vmDirectory)
-            : try MacOSVMBundle(url: URL(fileURLWithPath: source)).clone(to: vmDirectory)
+            : try MacOSVMBundle(url: URL(fileURLWithPath: source)).instance(at: vmDirectory)
 
         let virtualMachine = try MacOSVirtualMachine(
             bundle: bundle,

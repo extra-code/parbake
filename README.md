@@ -10,7 +10,10 @@
 Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.framework, as
 `container-runtime-macos`, a runtime plugin for [apple/container](https://github.com/apple/container).
 
-- Each container boots its own APFS clone of an installed macOS VM bundle; the source bundle stays unchanged.
+- Each container boots its own instance of an installed macOS VM bundle; the source bundle stays unchanged.
+  With an ASIF disk image (the default on a macOS 27 host), the instance reads the bundle's disk read-only
+  and writes into its own DiskImageKit overlay, which refuses to stack on any other base. With a raw disk
+  image, the instance is an APFS clone.
 - The init process of the container is the guest: `container start` boots it, and the container exits when the guest shuts down.
 - `container stop` asks the guest to shut down and stops it forcibly once the timeout passes; `container kill -s KILL` stops it at once.
 - Networking uses Virtualization.framework NAT.
@@ -24,6 +27,7 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
   [extra-code/container](https://github.com/extra-code/container) fork at the revision `Package.swift` pins.
   SwiftPM fetches it, and `dev-env.sh` builds it
 - An installed macOS VM bundle with `Disk.img`, `AuxiliaryStorage`, `HardwareModel` and `MachineIdentifier`, such as the bundle Apple's "Running macOS in a virtual machine on Apple silicon" sample creates
+- Do not boot a bundle read-write while containers run from it: their overlays build on its disk as it is.
 
 ## Quick start
 
