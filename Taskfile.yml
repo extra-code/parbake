@@ -68,6 +68,8 @@ tasks:
     cmds:
       - mkdir -p "{{.PLUGIN_DIR}}/bin"
       - install -m 0755 "{{.BIN_DIR}}/{{.NAME}}" "{{.PLUGIN_DIR}}/bin/{{.NAME}}"
+      - install -m 0755 "{{.BIN_DIR}}/parbake" "{{.PLUGIN_DIR}}/bin/parbake"
+      - install -m 0755 "{{.BIN_DIR}}/parbake-agent" "{{.PLUGIN_DIR}}/bin/parbake-agent"
       - install -m 0644 config.toml "{{.PLUGIN_DIR}}/config.toml"
       - echo "installed {{.NAME}} to {{.PLUGIN_DIR}}"
 

@@ -40,6 +40,9 @@ final class GuestProcess: @unchecked Sendable {
 
     var currentExit: Exit? { lock.withLock { exit } }
 
+    /// Whether the process started and has not exited yet.
+    var isRunning: Bool { lock.withLock { pid > 0 && exit == nil } }
+
     /// Connects the streams, spawns the process and returns its PID.
     func start() throws -> pid_t {
         let launch = try Launch(process: process)

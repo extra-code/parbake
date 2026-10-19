@@ -15,10 +15,14 @@ public enum GuestPreparation {
     /// the account to run `passwordlessCommands` without a password, optionally turns Spotlight
     /// indexing off and empties the caches, and shuts the guest down.
     ///
+    /// With `installAgent`, it also installs the agent staged at `GuestAgentInstallation.stagedPath`
+    /// and leaves the guest running, so the host can check the agent before it shuts the guest down.
     /// The password reaches sudo through the script on ssh's standard input.
-    public static func script(username: String, password: String, publicKeys: [String], tidy: Bool) -> String {
+    public static func script(username: String, password: String, publicKeys: [String], tidy: Bool, installAgent: Bool = false) -> String {
         let userTidy = tidy ? "rm -rf \"$HOME\"/Library/Caches/* 2>/dev/null || true\n" : ""
         let rootTidy = tidy ? "mdutil -a -i off >/dev/null\nmdutil -a -E >/dev/null 2>&1 || true\nrm -rf /Library/Caches/* 2>/dev/null || true\n" : ""
+        let rootAgent = installAgent ? GuestAgentInstallation.rootCommands : ""
+        let shutdown = installAgent ? "" : "sudo -n /sbin/shutdown -h now >/dev/null\n"
         return """
             set -eu
             umask 077
@@ -35,14 +39,13 @@ public enum GuestPreparation {
             chmod 0440 /etc/sudoers.d/parbake.new
             visudo -cqf /etc/sudoers.d/parbake.new
             mv /etc/sudoers.d/parbake.new /etc/sudoers.d/parbake
-            \(rootTidy)PARBAKE_ROOT
+            \(rootTidy)\(rootAgent)PARBAKE_ROOT
             )
             printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
             unset PARBAKE_PASSWORD
             \(passwordlessCommands.map { "sudo -n -l \($0) >/dev/null" }.joined(separator: "\n"))
             echo '\(preparedMarker)'
-            sudo -n /sbin/shutdown -h now >/dev/null
-
+            \(shutdown)
             """
     }
 }

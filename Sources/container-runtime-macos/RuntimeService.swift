@@ -6,6 +6,7 @@ import ContainerResource
 import ContainerRuntimeClient
 import ContainerXPC
 import ContainerizationError
+import ContainerizationOCI
 import Foundation
 import Logging
 import RuntimeMacOS
@@ -15,7 +16,8 @@ import vmnet
 /// Serves the runtime XPC routes for one macOS container.
 ///
 /// The init process of the container is the guest itself: starting it boots the
-/// virtual machine, and it exits when the virtual machine stops.
+/// virtual machine, and it exits when the virtual machine stops. Every other process runs in the
+/// guest through the guest agent.
 actor RuntimeService {
     /// The container label that names the installed macOS VM bundle to boot.
     static let bundleLabel = "runtime-macos.bundle"
@@ -27,6 +29,11 @@ actor RuntimeService {
         case fail
         case discard
     }
+    /// The container label that sets how many seconds the start waits for the guest agent after the boot.
+    static let readinessTimeoutLabel = "runtime-macos.readiness-timeout"
+    static let defaultReadinessTimeout: Duration = .seconds(180)
+    /// How long `shutdown` started through the guest agent gets to report its exit.
+    static let agentShutdownTimeout: Duration = .seconds(15)
     /// The directory in the container root that holds the container's instance of the bundle.
     static let vmDirectoryName = "vm"
     /// The least time a guest gets to finish a shutdown it accepted over SSH.
@@ -48,6 +55,9 @@ actor RuntimeService {
     private var configuration: ContainerConfiguration?
     private var virtualMachine: MacOSVirtualMachine?
     private var bundle: MacOSVMBundle?
+    private var readinessTimeout = defaultReadinessTimeout
+    /// Runs every process but the init process in the guest; set when the guest boots.
+    private var agent: GuestAgent?
     /// The guest's address on the container network; the open session holds the allocation.
     private var attachment: Attachment?
     private var networkSession: XPCClientSession?
@@ -96,6 +106,15 @@ actor RuntimeService {
             )
         }
 
+        var readinessTimeout = Self.defaultReadinessTimeout
+        if let value = configuration.labels[Self.readinessTimeoutLabel] {
+            guard let seconds = Int(value), seconds > 0 else {
+                throw ContainerizationError(
+                    .invalidArgument, message: "\(Self.readinessTimeoutLabel) must be a number of seconds, got \(value)")
+            }
+            readinessTimeout = .seconds(seconds)
+        }
+
         let vmDirectory = root.appendingPathComponent(Self.vmDirectoryName)
         let sourceBundle = try MacOSVMBundle(url: URL(fileURLWithPath: source))
         let bundle =
@@ -136,38 +155,81 @@ actor RuntimeService {
         self.configuration = configuration
         self.virtualMachine = virtualMachine
         self.bundle = bundle
+        self.readinessTimeout = readinessTimeout
         self.state = .prepared
         log.info("prepared macOS guest", metadata: ["bundle": "\(bundle.url.path)", "source": "\(source)"])
         return message.reply()
     }
 
-    /// Boots the guest when `id` names the init process.
+    /// Boots the guest when `id` names the init process, and starts the process through the guest
+    /// agent otherwise.
+    ///
+    /// With a bundle that has an agent, the start replies once the agent answers, so a caller
+    /// can run processes as soon as `container run -d` returns; a guest whose agent does not answer
+    /// within the readiness timeout is stopped and the start fails.
     @Sendable
     func startProcess(_ message: XPCMessage) async throws -> XPCMessage {
         let id = try message.id()
         let (configuration, virtualMachine) = try prepared()
         guard id == configuration.id else {
-            throw ContainerizationError(.unsupported, message: "processes other than the init process need the guest agent")
+            let pid = try await runningAgent().startProcess(id: id)
+            log.info("started process through the guest agent", metadata: ["id": "\(id)", "pid": "\(pid)"])
+            return message.reply()
         }
         guard state == .prepared else {
             throw ContainerizationError(.invalidState, message: "cannot start: container is \(state)")
         }
 
         try await virtualMachine.start()
+        let agent = GuestAgent(virtualMachine: virtualMachine)
+        self.agent = agent
         state = .running
         startedDate = Date()
         log.info("started macOS guest")
 
         Task {
             let exit = await virtualMachine.wait()
-            self.guestStopped(exit)
+            await self.guestStopped(exit)
+        }
+
+        if let installed = bundle?.agentVersion {
+            do {
+                let version = try await agent.waitUntilReady(timeout: readinessTimeout)
+                log.info("guest agent is ready", metadata: ["version": "\(version)", "installed": "\(installed)"])
+            } catch {
+                log.error("guest agent is not ready, stopping the guest", metadata: ["error": "\(error)"])
+                try? await virtualMachine.forceStop()
+                throw ContainerizationError(.timeout, message: "the macOS guest started but its agent is not ready: \(error)")
+            }
         }
         return message.reply()
     }
 
+    /// Creates a process in the guest through the guest agent.
     @Sendable
     func createProcess(_ message: XPCMessage) async throws -> XPCMessage {
-        throw ContainerizationError(.unsupported, message: "processes other than the init process need the guest agent")
+        let id = try message.id()
+        let process = try Self.ociProcess(message.processConfiguration(), provisionedUsername: bundle?.provisionedUsername)
+        try await runningAgent().createProcess(id: id, process: process, stdio: message.stdio())
+        let user = process.user.username.isEmpty ? "uid \(process.user.uid)" : process.user.username
+        log.info("created process through the guest agent", metadata: ["id": "\(id)", "user": "\(user)"])
+        return message.reply()
+    }
+
+    /// The OCI process the agent starts for `configuration`.
+    static func ociProcess(_ configuration: ProcessConfiguration, provisionedUsername: String?) -> ContainerizationOCI.Process {
+        let user: GuestUser =
+            switch configuration.user {
+            case .raw(let name): .name(name)
+            case .id(let uid, let gid): .id(uid: uid, gid: gid)
+            }
+        return ContainerizationOCI.Process(
+            args: [configuration.executable] + configuration.arguments,
+            cwd: configuration.workingDirectory,
+            env: configuration.environment,
+            user: user.ociUser(provisionedUsername: provisionedUsername, additionalGids: configuration.supplementalGroups),
+            terminal: configuration.terminal
+        )
     }
 
     @Sendable
@@ -209,14 +271,19 @@ actor RuntimeService {
         return message.reply()
     }
 
-    /// Stops the guest forcibly on SIGKILL and shuts it down on any other signal.
+    /// Sends a signal to a process through the guest agent; for the init process, stops the guest
+    /// forcibly on SIGKILL and shuts it down on any other signal.
     @Sendable
     func kill(_ message: XPCMessage) async throws -> XPCMessage {
         let id = try message.id()
         let signal = message.string(key: RuntimeKeys.signal.rawValue) ?? ""
         let (configuration, virtualMachine) = try prepared()
         guard id == configuration.id else {
-            throw ContainerizationError(.notFound, message: "process \(id) does not exist")
+            guard let number = GuestAgent.signalNumber(signal) else {
+                throw ContainerizationError(.invalidArgument, message: "unknown signal \(signal)")
+            }
+            try await runningAgent().signal(id: id, signal: number)
+            return message.reply()
         }
         guard state == .running else {
             throw ContainerizationError(.invalidState, message: "cannot kill: container is not running")
@@ -224,28 +291,37 @@ actor RuntimeService {
 
         if Self.isKill(signal) {
             try await virtualMachine.forceStop()
-        } else if !shutDownOverSSH(virtualMachine) {
+        } else if await !shutDown(virtualMachine) {
             try await virtualMachine.requestStop()
         }
         return message.reply()
     }
 
-    /// Accepts terminal resizes and ignores them, because the guest has no terminal attached.
+    /// Resizes the terminal of a process in the guest; the init process has no terminal.
     @Sendable
     func resize(_ message: XPCMessage) async throws -> XPCMessage {
-        message.reply()
+        let id = try message.id()
+        let (configuration, _) = try prepared()
+        guard id != configuration.id else {
+            return message.reply()
+        }
+        let columns = UInt32(clamping: message.uint64(key: RuntimeKeys.width.rawValue))
+        let rows = UInt32(clamping: message.uint64(key: RuntimeKeys.height.rawValue))
+        try await runningAgent().resize(id: id, columns: columns, rows: rows)
+        return message.reply()
     }
 
-    /// Waits until the guest stops and returns its exit.
+    /// Waits until a process exits, or the guest stops for the init process, and returns its exit.
     @Sendable
     func wait(_ message: XPCMessage) async throws -> XPCMessage {
         let id = try message.id()
         let (configuration, virtualMachine) = try prepared()
-        guard id == configuration.id else {
-            throw ContainerizationError(.notFound, message: "process \(id) does not exist")
+        let exit: GuestExit
+        if id == configuration.id {
+            exit = await virtualMachine.wait()
+        } else {
+            exit = try await runningAgent().wait(id: id)
         }
-
-        let exit = await virtualMachine.wait()
         let reply = message.reply()
         reply.set(key: RuntimeKeys.exitCode.rawValue, value: Int64(exit.exitCode))
         reply.set(key: RuntimeKeys.exitedAt.rawValue, value: exit.exitedAt)
@@ -257,6 +333,8 @@ actor RuntimeService {
         switch state {
         case .created, .prepared, .stopped, .stopping:
             state = .shuttingDown
+            await agent?.close()
+            agent = nil
             releaseNetwork()
         default:
             throw ContainerizationError(.invalidState, message: "cannot shutdown: container is not stopped")
@@ -345,6 +423,13 @@ actor RuntimeService {
         attachment = nil
     }
 
+    private func runningAgent() throws -> GuestAgent {
+        guard state == .running, let agent else {
+            throw ContainerizationError(.invalidState, message: "container is not running")
+        }
+        return agent
+    }
+
     private func prepared() throws -> (ContainerConfiguration, MacOSVirtualMachine) {
         guard let configuration, let virtualMachine else {
             throw ContainerizationError(.invalidState, message: "container is not bootstrapped")
@@ -352,13 +437,13 @@ actor RuntimeService {
         return (configuration, virtualMachine)
     }
 
-    /// Shuts the guest down over SSH, or asks it to shut down like a press of the power button
-    /// when SSH is not available, and stops it forcibly once the timeout passes.
+    /// Shuts the guest down through the agent or over SSH, or asks it to shut down like a press of
+    /// the power button when neither is available, and stops it forcibly once the timeout passes.
     ///
-    /// A shutdown accepted over SSH gets at least `minimumShutdownTimeout`.
+    /// A shutdown the guest accepted gets at least `minimumShutdownTimeout`.
     private func stopGuest(_ virtualMachine: MacOSVirtualMachine, timeout: Duration) async throws {
         var timeout = timeout
-        if shutDownOverSSH(virtualMachine) {
+        if await shutDown(virtualMachine) {
             timeout = max(timeout, Self.minimumShutdownTimeout)
         } else {
             do {
@@ -370,6 +455,28 @@ actor RuntimeService {
         if await virtualMachine.wait(timeout: timeout) == nil {
             log.info("guest did not shut down in time, stopping it")
             try await virtualMachine.forceStop()
+        }
+    }
+
+    /// Runs `shutdown -h now` in the guest through the agent, then over SSH; returns whether the
+    /// guest accepted it.
+    private func shutDown(_ virtualMachine: MacOSVirtualMachine) async -> Bool {
+        if await shutDownThroughAgent() {
+            return true
+        }
+        return shutDownOverSSH(virtualMachine)
+    }
+
+    /// Runs `shutdown -h now` as root through the agent, or with the provisioned account's
+    /// passwordless sudo rule when the agent does not run as root; returns whether the guest
+    /// accepted it.
+    private func shutDownThroughAgent() async -> Bool {
+        guard let agent else {
+            return false
+        }
+        let log = self.log
+        return await agent.shutDown(provisionedUsername: bundle?.provisionedUsername, timeout: Self.agentShutdownTimeout) {
+            log.info("\($0)")
         }
     }
 
@@ -402,8 +509,9 @@ actor RuntimeService {
         return true
     }
 
-    private func guestStopped(_ exit: GuestExit) {
+    private func guestStopped(_ exit: GuestExit) async {
         log.info("macOS guest stopped", metadata: ["exitCode": "\(exit.exitCode)"])
+        await agent?.close()
         if state == .running || state == .stopping {
             state = .stopped
         }

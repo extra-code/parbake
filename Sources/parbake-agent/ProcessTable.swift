@@ -19,10 +19,10 @@ actor ProcessTable {
         return process
     }
 
-    /// Forgets an exited process.
+    /// Forgets an exited process, or one that never started.
     func remove(_ id: String) throws {
         let process = try process(id)
-        guard process.currentExit != nil else {
+        guard !process.isRunning else {
             throw AgentError.failedPrecondition("process \(id) is still running")
         }
         processes[id] = nil

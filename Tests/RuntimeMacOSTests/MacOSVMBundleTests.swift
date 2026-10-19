@@ -158,6 +158,21 @@ struct InstanceTests {
         let attributes = try FileManager.default.attributesOfItem(atPath: instance.diskImageURL.path)
         #expect(attributes[.type] as? FileAttributeType == .typeRegular)
     }
+
+    @Test
+    func testAnInstanceKeepsTheAgentVersion() throws {
+        let base = try makeBundle(format: .raw)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("vm-instance-\(UUID())")
+        defer {
+            try? FileManager.default.removeItem(at: base)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try Data("1 0.52.0\n".utf8).write(to: base.appendingPathComponent(MacOSVMBundle.agentName))
+
+        let instance = try MacOSVMBundle(url: base).instance(at: destination)
+
+        #expect(instance.agentVersion == "1 0.52.0")
+    }
 }
 
 struct ResetOverlayTests {

@@ -63,10 +63,13 @@ exits when the guest shuts down. Every other process is an agent process.
 - Runs as a LaunchDaemon (root): label `container-runtime-macos.agent`, program
   `/usr/local/libexec/parbake-agent`, `KeepAlive` and `RunAtLoad` true.
 - Listens on `AF_VSOCK`, any CID, port 1024. Accepts a connection only when the peer CID is
-  `VMADDR_CID_HOST` (2); processes inside the guest cannot reach it.
+  `VMADDR_CID_HOST` (2); processes inside the guest cannot reach it. grpc-swift reports no peer for a
+  vsock connection, so the agent accepts vsock connections itself, checks the CID, and relays each
+  admitted connection to its gRPC server on a Unix socket, `/var/run/parbake-agent.sock` as root
+  (mode 0700), or in the temporary directory otherwise.
 - Serves `SandboxContext.SimpleServiceProtocol`. RPCs outside C-002 to C-004 and C-007 throw
   `RPCError(code: .unimplemented)`.
-- Logs to the unified log, subsystem `container-runtime-macos.agent`.
+- Logs to standard error, which the LaunchDaemon writes to `/var/log/parbake-agent.log`.
 
 ### C-002 — Process creation and the account's session
 
@@ -127,9 +130,9 @@ and records the process; `StartProcess(id)` spawns it and returns its PID.
 - `MacOSVirtualMachine` exposes a vsock dial (`VZVirtioSocketDevice.connect(toPort:)`) and listeners
   (`setSocketListener(_:forPort:)`); the runtime wraps a connection's file descriptor in `Vminitd`.
 - **Readiness:** after the boot the runtime dials port 1024 once per second. The agent is ready when
-  `Getenv("CONTAINER_RUNTIME_MACOS_AGENT")` returns its version, `<protocol> <containerization
-  version>`, for example `1 0.52.0`. The protocol number changes only when this spec changes the wire
-  contract; the containerization version is informational.
+  `Getenv("CONTAINER_RUNTIME_MACOS_AGENT")` returns its version line, `<protocol>` optionally followed
+  by a space and informational fields, for example `1` or `1 0.52.0`. The runtime reads only the first
+  field. The protocol number changes only when this spec changes the wire contract.
 - **Readiness gate:** a bundle with `Agent` makes `startProcess` of the init process reply only when
   the agent is ready, within the label `runtime-macos.readiness-timeout` (default 180 s); on timeout the guest is stopped and the start fails. A bundle without `Agent` replies after
   the boot, as today.
@@ -146,16 +149,32 @@ and records the process; `StartProcess(id)` spawns it and returns its PID.
   process other than the init process map to the agent through `Vminitd`, with host ports from a
   per-container allocator starting at 0x10000000. The init process keeps its routes.
 - **Stop:** `stop` and `kill` with any signal but SIGKILL for the init process start
-  `["/sbin/shutdown", "-h", "now"]` as root through the agent; when that fails, ADR 0003 applies.
+  `["/sbin/shutdown", "-h", "now"]` as root through the agent. An agent that does not run as root
+  refuses that with `FAILED_PRECONDITION`, and the runtime then starts
+  `["/usr/bin/sudo", "-n", "/sbin/shutdown", "-h", "now"]` as the provisioned account. Exit 0 counts
+  as accepted, and so does a connection that ends while the shutdown runs. When neither attempt is
+  accepted, ADR 0003 applies.
+- **No agent:** a call to an agent that does not answer fails with a message that names
+  `parbake agent install`.
+- **Signals** arrive as names or numbers (`SIGTERM`, `TERM`, `15`) and map to Darwin's numbers, which
+  differ from Linux for several signals (SIGUSR1 is 30).
 
 ### C-006 — Installation and update
 
-- `parbake provision` copies the agent binary and its LaunchDaemon property list into the guest in
-  the preparation SSH session, loads it with `launchctl bootstrap system`, waits for `Getenv` over
-  vsock from the provisioning process, and writes `Agent` (the version line) into the bundle.
-- `parbake agent install --bundle <path>` boots a provisioned bundle once, installs the agent from
-  this build over SSH with `GuestKey`, updates `Agent`, and shuts the guest down. It is the update
-  path for existing bundles and after a protocol change.
+- `parbake provision` copies the agent binary to `/tmp/parbake-agent.staged` in an SSH connection
+  of its own, then the preparation SSH session installs it as root: the binary to
+  `/usr/local/libexec/parbake-agent`, the property list to
+  `/Library/LaunchDaemons/container-runtime-macos.agent.plist`, loaded with
+  `launchctl bootstrap system`. The guest then stays up: provisioning waits for `Getenv` over vsock
+  (at most 120 s), writes the answer into `Agent`, and shuts the guest down through the agent.
+  `--no-agent` skips all of it; `--agent <path>` picks another build.
+- `parbake agent install --bundle <path>` boots a provisioned bundle once, copies the agent from
+  this build in over SSH with `GuestKey`, installs it with the account's password (from the keychain
+  with `--keychain`, else standard input), updates `Agent` the same way, and shuts the guest down
+  through the agent. It is the update path for existing bundles and after a protocol change. It
+  writes to the bundle's disk image, so containers made from the bundle before must be removed.
+- `task install` puts `parbake` and `parbake-agent` next to the plugin, and both commands take the
+  agent from the directory of `parbake` by default.
 - Instances copy `Agent` like `Provisioned` and `GuestKey`.
 
 ### C-007 — File copy (reserved)
@@ -217,18 +236,39 @@ first slice; until then they return `UNIMPLEMENTED`.
   20 s after the boot (SSH answered at 10 s); `Getenv` returned the protocol version `1` and
   `/Users/runner`; `Sync` succeeded; `Umount` returned `unimplemented`. swift-nio's vsock transport
   listens on `AF_VSOCK` in a macOS guest without root. The debug agent binary is 78 MB.
-- **V-2 — passed at the agent, 2026-10-18:** through `Vminitd`, `/bin/sh -c 'echo out; echo err >&2;
+- **V-2 — passed, at the agent 2026-10-18 and through `container exec` 2026-10-19:** through `Vminitd`, `/bin/sh -c 'echo out; echo err >&2;
   exit 3'` delivered `out` on stdout and `err` on stderr separately and `WaitProcess` returned 3
   (`parbake agent-probe`). The same run passed stdin through `cat`, got 143 for `tail -f /dev/null`
-  after `KillProcess` SIGTERM, and refused uid 0 from a non-root agent. Through `container exec`
-  this waits for C-005.
+  after `KillProcess` SIGTERM, and refused uid 0 from a non-root agent.
+  **Through `container exec`, passed 2026-10-19** with the agent as a LaunchAgent of the provisioned
+  account: `container exec mac1 sh -c 'echo out; echo err >&2; exit 3'` printed `out` on stdout, `err`
+  on stderr and exited 3; `echo … | container exec -i mac1 cat` echoed the input; without `--user` the
+  process ran as `runner` in `/Users/runner`; `--user root` was refused by the non-root agent;
+  `container exec mac1 true` took 54 ms. A signal the CLI forwards never reaches the runtime, because
+  apple/container's API server drops it ([apple/container#1941](https://github.com/apple/container/issues/1941));
+  the agent's own signal path is covered by the run through `Vminitd` above.
 - **V-3:** `container exec -it mac1 zsh` gets a PTY; a terminal resize reaches `stty size`.
 - **V-4:** `container exec mac1 security list-keychains` as the guest account lists its login keychain;
-  `xcrun simctl list` answers.
-- **V-5:** `container run -d` returns only after readiness; with the agent stopped it fails after the
-  timeout and the guest is stopped.
-- **V-6:** `container stop` with the agent shuts the guest down with exit 0 and no SSH connection in
-  the log.
+  `xcrun simctl list` answers. **Keychain half passed 2026-10-19:** it listed
+  `/Users/runner/Library/Keychains/login.keychain-db`. The simulator half needs a bundle with Xcode.
+- **V-5 — passed 2026-10-19:** `container run -d` returns only after readiness; with the agent
+  stopped it fails after the timeout and the guest is stopped. Measured: `container start` returned
+  17 s after the boot began, once the agent answered, and an `exec` right after it succeeded. A
+  container with `runtime-macos.readiness-timeout=30`, an `Agent` file and no agent failed after
+  30 s; the guest stopped with 137 and the container showed `stopped`.
+- **V-6 — passed 2026-10-19:** `container stop` with the agent shuts the guest down with exit 0 and
+  no SSH connection in the log. Measured with a non-root agent: root refused, `sudo -n` as `runner`
+  accepted, exit 0 after 1.4 s.
+
+- **C-006 — passed 2026-10-19:** `parbake agent install --bundle ~/VM4.bundle --keychain` on an APFS
+  clone of a provisioned bundle took 30 s with no keychain dialog; the agent answered over vsock and
+  shut the guest down as root. A container from the bundle started with the readiness gate (23 s),
+  and through the root agent: `exec` ran as `runner` in its `Aqua` session, wrote and read a generic
+  password in its login keychain, `--user root` ran as root, stop took 6 s with exit 0, and the agent
+  answered again after the next boot. Inside the guest, a vsock connection to port 1024 from CID 3
+  was refused and logged, and `runner` got `Permission denied` on the agent's Unix socket.
+  `provision` with the agent ran only as unit tests (scripts parse, property list valid): a fresh
+  bundle did not fit on this host's free disk.
 
 ## Resolved Questions
 

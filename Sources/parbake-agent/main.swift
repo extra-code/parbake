@@ -18,13 +18,24 @@ let port = arguments.first.flatMap(Int.init) ?? defaultPort
 
 setenv(versionVariable, "\(protocolVersion)", 1)
 
+// The gRPC server listens only on a Unix socket that no other account can open; the host reaches it
+// through VsockFront, which admits the host's CID alone.
+let socketPath =
+    getuid() == 0
+    ? "/var/run/parbake-agent.sock"
+    : FileManager.default.temporaryDirectory.appendingPathComponent("parbake-agent-\(port).sock").path
+unlink(socketPath)
+umask(0o077)
+
 let server = GRPCServer(
     transport: .http2NIOPosix(
-        address: .vsock(contextID: .any, port: .init(port)),
+        address: .unixDomainSocket(path: socketPath),
         transportSecurity: .plaintext,
         eventLoopGroup: MultiThreadedEventLoopGroup.singleton
     ),
     services: [SandboxService()]
 )
-FileHandle.standardError.write(Data("parbake-agent: serving SandboxContext on vsock port \(port)\n".utf8))
+let front = try VsockFront(port: UInt32(port), backend: socketPath)
+front.start()
+log("serving SandboxContext on vsock port \(port) for the host, through \(socketPath)")
 try await server.serve()

@@ -66,6 +66,11 @@ with that key. An accepted shutdown gets at least 60 s whatever `--time` says; a
 `GuestKey`, without an address or refusing gets the power-button request. Either way the guest is
 stopped forcibly once the wait passes.
 
+**Amended 2026-10-19:** with the guest agent, the runtime first runs `/sbin/shutdown -h now` through
+the agent: as root, or with `sudo -n` as the provisioned account when the agent does not run as
+root, using the same sudoers rule. SSH and then the power-button request remain the fallbacks, in
+that order. The same 60 s minimum applies.
+
 ### Consequences
 
 **Positive:**
@@ -88,7 +93,8 @@ stopped forcibly once the wait passes.
 - [x] On this host: `container stop` with the default timeout, twice in a row, exit 0, no XPC error.
 - [x] `GuestPreparationTests`: the script parses, carries keys and password verbatim, ends with the
       shutdown, `--tidy` is optional.
-- [ ] Replace SSH with the vsock guest agent (plan step 1).
+- [x] Shutdown through the vsock guest agent first: `container stop` with an agent in the guest,
+      exit 0 in 1.4 s, no SSH connection in the log (2026-10-19).
 
 ## Links
 
@@ -97,3 +103,4 @@ stopped forcibly once the wait passes.
 ## Changelog
 
 - 2026-10-18 — Initial version.
+- 2026-10-19 — Shutdown through the guest agent first, SSH as the fallback.

@@ -22,6 +22,8 @@ public struct MacOSVMBundle: Sendable {
     public static let provisionedName = "Provisioned"
     /// Private key that the host uses to log in to the guest account, written by provisioning.
     public static let guestKeyName = "GuestKey"
+    /// Written when the guest agent is installed; its content is the agent's version line.
+    public static let agentName = "Agent"
     /// The writable top layer of an instance whose disk image is a link to an ASIF base.
     public static let overlayImageName = "Overlay.asif"
 
@@ -59,6 +61,16 @@ public struct MacOSVMBundle: Sendable {
     public var overlayImageURL: URL { url.appendingPathComponent(Self.overlayImageName) }
     public var provisionedURL: URL { url.appendingPathComponent(Self.provisionedName) }
     public var guestKeyURL: URL { url.appendingPathComponent(Self.guestKeyName) }
+    public var agentURL: URL { url.appendingPathComponent(Self.agentName) }
+
+    /// The version line of the guest agent installed in the guest, or nil without one.
+    public var agentVersion: String? {
+        guard let content = try? String(contentsOf: agentURL, encoding: .utf8) else {
+            return nil
+        }
+        let version = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return version.isEmpty ? nil : version
+    }
 
     /// The guest account's username when provisioning created it, or nil.
     public var provisionedUsername: String? {
@@ -177,12 +189,12 @@ public struct MacOSVMBundle: Sendable {
     /// With an ASIF disk image, the instance links to that image, reads it read-only and writes
     /// into a new ASIF overlay that is bound to the image's layer UUID. With a raw disk image,
     /// the instance's disk is an APFS clone. The auxiliary storage and hardware model are APFS
-    /// clones, and so are the provisioning marker and the guest key when the bundle has them. The
+    /// clones, and so are the provisioning files and the agent version when the bundle has them. The
     /// machine identifier is new, so every instance has its own serial number and platform UUID.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Self.cloneFiles([Self.auxiliaryStorageName, Self.hardwareModelName], from: url, to: destination)
-        let provisioningFiles = [Self.provisionedName, Self.guestKeyName].filter {
+        let provisioningFiles = [Self.provisionedName, Self.guestKeyName, Self.agentName].filter {
             FileManager.default.fileExists(atPath: url.appendingPathComponent($0).path)
         }
         try Self.cloneFiles(provisioningFiles, from: url, to: destination)

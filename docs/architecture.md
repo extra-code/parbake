@@ -52,6 +52,9 @@ hand inside the guest:
 - it carries stdin, stdout and stderr separately and reports the exit code and signals,
 - it shuts the guest down on request.
 
+Only the host reaches it. The agent refuses vsock connections from inside the guest, and its own
+socket is open to root alone, so a guest account cannot use it to run anything as root.
+
 Provisioning copies the agent into the guest; it is built and signed together with the plugin, so
 both always speak the same protocol version. `parbake agent install` refreshes the agent in an
 existing bundle.
@@ -127,12 +130,13 @@ sequenceDiagram
 `container run -d` returns only once the agent answers, so a caller needs no polling. When the agent
 does not answer in time, the plugin stops the guest and the start fails.
 
-## Today, without the agent
+## Without the agent
 
-Until the agent is built, the plugin uses SSH with the bundle's `GuestKey` to shut a provisioned guest
-down ([ADR 0003](adr/adr_0003_controlled_shutdown_over_ssh.md)); without a key it sends the
-power-button request. `container exec` is not available yet, and `container run -d` returns right
-after the boot.
+A bundle without an `Agent` file starts as before: `container run -d` returns right after the boot,
+and `container exec` fails with a message that names `parbake agent install`. The plugin then shuts
+a provisioned guest down over SSH with the bundle's `GuestKey`
+([ADR 0003](adr/adr_0003_controlled_shutdown_over_ssh.md)); without a key it sends the power-button
+request.
 
 ## An analogy
 

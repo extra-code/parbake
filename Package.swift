@@ -35,6 +35,8 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "ContainerLog", package: "container"),
                 .product(name: "ContainerNetworkClient", package: "container"),
                 .product(name: "ContainerPlugin", package: "container"),
@@ -67,7 +69,10 @@ let package = Package(
         .target(
             name: "RuntimeMacOS",
             dependencies: [
-                .product(name: "Containerization", package: "containerization")
+                .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "NIOPosix", package: "swift-nio"),
             ]
         ),
         .testTarget(

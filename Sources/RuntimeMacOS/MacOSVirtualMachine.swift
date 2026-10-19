@@ -251,15 +251,23 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     /// The listener is in place when this returns its task's first suspension, so start it before
     /// asking the guest to connect.
     public func accept(onPort port: UInt32, timeout: Duration) async throws -> FileHandle {
-        let acceptor = VsockAcceptor()
+        let listener = try listen(onPort: port)
+        defer { listener.close() }
+        return try await listener.accept(timeout: timeout)
+    }
+
+    /// Listens on `port` on the host; the listener is in place when this returns.
+    public func listen(onPort port: UInt32) throws -> VsockPortListener {
         guard let socketDevice = queue.sync(execute: { virtualMachine.socketDevices.first as? VZVirtioSocketDevice }) else {
             throw ContainerizationError(.invalidState, message: "the virtual machine has no vsock device")
         }
+        let acceptor = VsockAcceptor()
         let listener = VZVirtioSocketListener()
         listener.delegate = acceptor
         queue.sync { socketDevice.setSocketListener(listener, forPort: port) }
-        defer { queue.sync { socketDevice.removeSocketListener(forPort: port) } }
-        return try await acceptor.connection(timeout: timeout, port: port)
+        return VsockPortListener(port: port, acceptor: acceptor) { [self] in
+            queue.sync { (virtualMachine.socketDevices.first as? VZVirtioSocketDevice)?.removeSocketListener(forPort: port) }
+        }
     }
 
     /// Asks the guest to shut down, like a press of the power button.
@@ -364,6 +372,29 @@ extension MacOSVirtualMachine: VZVirtualMachineDelegate {
 
     public func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: any Error) {
         finish(exitCode: Self.errorExitCode)
+    }
+}
+
+/// A host vsock port the guest connects to once.
+public final class VsockPortListener: Sendable {
+    public let port: UInt32
+    private let acceptor: VsockAcceptor
+    private let remove: @Sendable () -> Void
+
+    fileprivate init(port: UInt32, acceptor: VsockAcceptor, remove: @escaping @Sendable () -> Void) {
+        self.port = port
+        self.acceptor = acceptor
+        self.remove = remove
+    }
+
+    /// Returns the guest's first connection as a file handle that closes its descriptor when released.
+    public func accept(timeout: Duration) async throws -> FileHandle {
+        try await acceptor.connection(timeout: timeout, port: port)
+    }
+
+    /// Stops listening; a later connection to the port is refused.
+    public func close() {
+        remove()
     }
 }
 

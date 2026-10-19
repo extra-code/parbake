@@ -59,7 +59,9 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   login and Remote Login, without the Setup Assistant. One SSH session then adds the public key from
   `--authorized-key` and the bundle's own `GuestKey`, allows the account to run `/sbin/shutdown`
   without a password (`/etc/sudoers.d/parbake`), turns Spotlight indexing off and empties the caches
-  with `--tidy`, and shuts the guest down. The password is prompted for. Without
+  with `--tidy`, and installs the guest agent as a LaunchDaemon (`--no-agent` skips it). Once the
+  agent answers over vsock, provisioning writes its version to `Agent` in the bundle and shuts the
+  guest down through it. The password is prompted for. Without
   `--username`, the guest opens in a window for the Setup Assistant.
 - On a CI host, add `--keychain`: the password comes from the login keychain (generic password,
   service `container-runtime-macos.guest`, account = username). When the keychain has none,
@@ -69,7 +71,9 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   `parbake` never waits on a keychain dialog. The login keychain must be unlocked, which a LaunchAgent in a
   logged-in session has and a LaunchDaemon has not.
 - `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`,
-  plus `agent-probe`, which checks a development build of the guest agent against a provisioned bundle.
+  plus `agent install`, which installs or updates the guest agent in a provisioned bundle, and
+  `agent-probe`, which checks a development build of the agent against a provisioned bundle.
+  `agent install` writes to the bundle's disk image: remove containers made from the bundle first.
   `provision` runs only on the first boot after `install`, and writes `Provisioned` into the bundle.
 
 ## Build and install
@@ -80,7 +84,8 @@ task test
 task install INSTALL_ROOT=/usr/local  # installs to <root>/libexec/container-plugins
 ```
 
-`INSTALL_ROOT` is the root of the container installation that loads the plugin. Restart the
+`INSTALL_ROOT` is the root of the container installation that loads the plugin. `parbake` and
+`parbake-agent` are installed next to the plugin binary. Restart the
 container system services after you install the plugin.
 
 ## Run
@@ -98,13 +103,20 @@ container run -d \
   stacks on the bundle's disk image, for example after the bundle was installed again: `fail`
   (default) stops the start with an error, `discard` drops the overlay and the guest's writes and
   starts the instance over on the bundle, keeping its machine identifier.
+- `runtime-macos.readiness-timeout` sets how many seconds the start waits for the guest agent after
+  the boot (default 180). It applies to a bundle whose `Agent` file says an agent is installed; the
+  guest is stopped and the start fails when the agent does not answer in time.
 - The image reference is required by the CLI and otherwise unused.
 - The guest gets at least 4 GiB of memory.
 
 ## Limitations
 
 - At most two macOS guests run at the same time per host.
-- `exec`, `cp`, `stats`, `dial`, `export` and `clean` return "unsupported"; they need a guest agent.
+- `exec` needs the guest agent in the guest. It runs as the provisioned account in its login session,
+  with its keychain; `--user root` runs as root. `exec -t` is not supported yet.
+- Signals that the CLI forwards to an `exec` process fail in apple/container itself
+  ([apple/container#1941](https://github.com/apple/container/issues/1941)).
+- `cp`, `stats`, `dial`, `export` and `clean` return "unsupported".
 - Stop signals other than `KILL` request a guest shutdown.
 - The guest has no attached terminal; `run -it` shows no guest output.
 

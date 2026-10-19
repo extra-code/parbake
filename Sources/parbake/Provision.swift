@@ -14,9 +14,11 @@ extension ParbakeTool {
                 Boots the bundle once, headless, with a user account, automatic login and Remote Login, \
                 and waits until the account answers over SSH. In one SSH session it then adds the guest \
                 key that the runtime uses (and a public key from --authorized-key), allows the account to \
-                run /sbin/shutdown without a password, optionally turns Spotlight off and empties the \
-                caches (--tidy), and shuts the guest down. Run it on the first boot after `install`: the guest ignores \
-                the account settings on every later boot.
+                run /sbin/shutdown without a password, installs the guest agent as a LaunchDaemon \
+                (unless --no-agent), and optionally turns Spotlight off and empties the caches (--tidy). \
+                Once the agent answers over vsock, it records the agent's version in the bundle and \
+                shuts the guest down through the agent. Run it on the first boot after `install`: the \
+                guest ignores the account settings on every later boot.
 
                 The password is read from standard input, or prompted for on a terminal. With \
                 --keychain it comes from the login keychain instead; when the keychain has none for \
@@ -45,6 +47,12 @@ extension ParbakeTool {
         @Flag(name: .long, help: "Turn Spotlight indexing off and empty the caches before the shutdown")
         var tidy = false
 
+        @Option(name: .long, help: "Agent executable to install in the guest (default: next to parbake)")
+        var agent: String?
+
+        @Flag(name: .long, help: "Do not install the guest agent")
+        var noAgent = false
+
         @Option(name: .long, help: "Number of CPUs during provisioning")
         var cpus: Int = 4
 
@@ -63,9 +71,11 @@ extension ParbakeTool {
                 throw ValidationError("\(bundle) is already provisioned")
             }
             var publicKeys = try authorizedKey.map { [try Self.publicKey(at: URL(fileURLWithPath: $0))] } ?? []
-            let password = try keychain
+            let agentBinary = noAgent ? nil : try AgentSetup.binary(at: agent)
+            let password =
+                try keychain
                 ? GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
-                : readPassword()
+                : AgentSetup.password(for: username, keychainService: nil)
 
             let provisioning = GuestProvisioning(fullName: fullName ?? username, username: username, password: password)
             let startOptions = try provisioning.startOptions()
@@ -85,24 +95,33 @@ extension ParbakeTool {
             }
             print("The account answers over SSH at \(address)")
 
-            let script = GuestPreparation.script(username: username, password: password, publicKeys: publicKeys, tidy: tidy)
-            let result = ssh.run("/bin/bash -s", on: address, input: script)
-            guard result.output.contains(GuestPreparation.preparedMarker) else {
+            do {
+                if let agentBinary {
+                    try AgentSetup.stage(agentBinary, shell: ssh, address: address)
+                }
+                let script = GuestPreparation.script(
+                    username: username, password: password, publicKeys: publicKeys, tidy: tidy, installAgent: agentBinary != nil)
+                let result = ssh.run("/bin/bash -s", on: address, input: script)
+                guard result.output.contains(GuestPreparation.preparedMarker) else {
+                    throw ValidationError("preparing the account failed (ssh exit status \(result.status))")
+                }
+                print(
+                    "Added \(publicKeys.count) public key(s), allowed \(username) to shut the guest down"
+                        + (agentBinary != nil ? ", installed the guest agent" : "")
+                        + (tidy ? ", turned Spotlight off and emptied the caches" : ""))
+                try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)
+                if agentBinary != nil, try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
+                    _ = ssh.run("sudo -n /sbin/shutdown -h now", on: address)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: vmBundle.provisionedURL)
                 try? await virtualMachine.forceStop()
-                throw ValidationError("preparing the account failed (ssh exit status \(result.status))")
+                throw error
             }
-            print("Added \(publicKeys.count) public key(s), allowed \(username) to shut the guest down\(tidy ? ", turned Spotlight off and emptied the caches" : "")")
 
             print("Shutting the guest down")
-            if await virtualMachine.wait(timeout: .seconds(180)) == nil {
-                try? await virtualMachine.requestStop()
-                if await virtualMachine.wait(timeout: .seconds(60)) == nil {
-                    try? await virtualMachine.forceStop()
-                    throw ValidationError("the guest did not shut down; it was stopped forcibly and may need another boot")
-                }
-            }
+            try await AgentSetup.waitForStop(virtualMachine)
 
-            try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)
             print("Provisioned \(bundle) with the account \(username)")
         }
 
@@ -143,20 +162,6 @@ extension ParbakeTool {
                 try await Task.sleep(for: .seconds(5))
             }
             throw ValidationError("the account did not answer over SSH within \(timeout) seconds")
-        }
-
-        private func readPassword() throws -> String {
-            if isatty(STDIN_FILENO) != 0 {
-                var buffer = [CChar](repeating: 0, count: 1024)
-                guard let line = readpassphrase("Password for \(username): ", &buffer, buffer.count, 0) else {
-                    throw ValidationError("failed to read the password")
-                }
-                return String(cString: line)
-            }
-            guard let line = readLine(strippingNewline: true), !line.isEmpty else {
-                throw ValidationError("no password on standard input")
-            }
-            return line
         }
     }
 }
