@@ -200,7 +200,8 @@ public struct MacOSVMBundle: Sendable {
         try Self.cloneFiles(provisioningFiles, from: url, to: destination)
         try VZMacMachineIdentifier().dataRepresentation.write(to: destination.appendingPathComponent(Self.machineIdentifierName))
         guard #available(macOS 27, *), try diskFormat() == .asif else {
-            try Self.cloneFiles([Self.diskImageName], from: url, to: destination)
+            // A raw disk image copied across volumes takes its full size; only a clone is cheap.
+            try Self.cloneFiles([Self.diskImageName], from: url, to: destination, copyWhenNotClonable: false)
             return try MacOSVMBundle(url: destination)
         }
         try linkBaseAndCreateOverlay(in: destination)
@@ -246,21 +247,36 @@ public struct MacOSVMBundle: Sendable {
     /// up front and the guest's writes never reach the source bundle.
     public func clone(to destination: URL) throws -> MacOSVMBundle {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        try Self.cloneFiles(Self.fileNames, from: url, to: destination)
+        try Self.cloneFiles(Self.fileNames, from: url, to: destination, copyWhenNotClonable: false)
         return try MacOSVMBundle(url: destination)
     }
 
-    private static func cloneFiles(_ names: [String], from url: URL, to destination: URL) throws {
+    /// Clones `names` from `url` into `destination` with APFS copy-on-write clones. Where no clone
+    /// is possible, because `destination` is on another volume or not on APFS, the files are copied
+    /// when `copyWhenNotClonable` is set and the call fails otherwise.
+    private static func cloneFiles(_ names: [String], from url: URL, to destination: URL, copyWhenNotClonable: Bool = true) throws {
         for name in names {
             let source = url.appendingPathComponent(name)
             let target = destination.appendingPathComponent(name)
-            guard clonefile(source.path, target.path, 0) == 0 else {
-                let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+            guard clonefile(source.path, target.path, 0) != 0 else {
+                continue
+            }
+            let cloneError = errno
+            guard cloneError == EXDEV || cloneError == ENOTSUP else {
                 throw ContainerizationError(
-                    .internalError,
-                    message: "failed to clone \(source.path) to \(target.path)",
-                    cause: POSIXError(code)
-                )
+                    .internalError, message: "failed to clone \(source.path) to \(target.path)",
+                    cause: POSIXError(POSIXErrorCode(rawValue: cloneError) ?? .EIO))
+            }
+            guard copyWhenNotClonable else {
+                throw ContainerizationError(
+                    .unsupported,
+                    message: "cannot clone \(source.path) to \(target.path): both must be on the same APFS volume; "
+                        + "a bundle with an ASIF disk image, the default on macOS 27, may live on another volume")
+            }
+            guard copyfile(source.path, target.path, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
+                throw ContainerizationError(
+                    .internalError, message: "failed to copy \(source.path) to \(target.path)",
+                    cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
             }
         }
     }

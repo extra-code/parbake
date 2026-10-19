@@ -82,7 +82,8 @@ discards the overlays, copies the auxiliary storage again from the base bundle a
 **Option 3.** `parbake install` creates an ASIF disk on a macOS 27 host (`--disk-format raw` keeps
 the raw path). `MacOSVMBundle.instance(at:)` links an ASIF base read-only as `Disk.img` and creates
 `Overlay.asif` bound to its layer UUID; a raw base is cloned with `clonefile`. The auxiliary storage,
-hardware model, `Provisioned` and `GuestKey` are APFS clones; the `MachineIdentifier` is new for every
+hardware model, `Provisioned` and `GuestKey` are APFS clones, or copies when the bundle is on another
+volume or not on APFS; the `MachineIdentifier` is new for every
 instance. DiskImageKit is weak-linked.
 
 An overlay that no longer stacks on its base surfaces as `IncompatibleOverlayError`. The label
@@ -121,6 +122,8 @@ overlay, as Apple's sample does, keeping the instance's machine identifier.
       again and keeps the machine identifier.
 - [x] On this host: with the base link pointed at another bundle, a container without the label
       fails with the label named in the error, and one with `discard` starts over and boots.
+- [x] `OtherVolumeTests`: an instance of an ASIF base on an HFS+ volume copies the auxiliary storage
+      and stacks its overlay; a raw base on another volume is refused, since only a clone is cheap.
 - [ ] A cache layer for a base on a network volume.
 
 ## Links

@@ -41,16 +41,26 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 ## Quick start
 
 ```bash
-scripts/create-vm-bundle.sh --username ci --authorized-key ~/.ssh/id_ed25519.pub
+task sign                          # build and sign the plugin, parbake and the guest agent
+"$(task bin-path)/parbake" create --username ci --authorized-key ~/.ssh/id_ed25519.pub
                                    # download macOS, install it into ~/VM.bundle, create the account
 scripts/dev-env.sh up              # build container and the plugin, switch to the development services
 scripts/dev-env.sh run ~/VM.bundle # boot a macOS container from the bundle
 scripts/dev-env.sh down            # stop the development services, restart the installed ones
 ```
 
-- `create-vm-bundle.sh` downloads the latest restore image this host supports into
-  `~/Library/Caches/container-runtime-macos`, resumes interrupted downloads, and reuses
-  completed ones. `--help` lists the options.
+- `parbake create` downloads the latest restore image this host supports into
+  `~/Library/Caches/parbake`, resumes interrupted downloads, and reuses completed ones, then
+  installs macOS and provisions the account. `parbake create --help` lists the options.
+- Bundles and the restore image cache take about 30 GB each. To keep them off the internal disk, set
+  `PARBAKE_HOME` to a directory on an external SSD, for example
+  `PARBAKE_HOME=/Volumes/external-disk/parbake parbake create …`: the bundle then defaults to
+  `$PARBAKE_HOME/VM.bundle` and the cache to `$PARBAKE_HOME/cache`. Containers keep their overlays in
+  container's data directory and link to the bundle's disk image, so a bundle with an ASIF disk image
+  may live on another volume. A raw disk image must be on the same APFS volume as the containers.
+  Keep the disk attached while a guest runs from it, and prefer an SSD to a USB stick. Format the
+  disk as APFS: on a Journaled HFS+ SSD over USB, one guest's disk writes stalled in the kernel
+  during its first boot; every access to its disk image hung, and the guest process could not be ended.
 - `dev-env.sh` builds apple/container in `.build/dev-env/container` and keeps its data in
   `~/.container-macos-dev`. The installed container keeps its binaries, data and containers.
   Both register the same launchd service, so `up` stops the installed services and `down`
@@ -70,7 +80,7 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   access goes through `/usr/bin/security`, which creates the entry with `-A`, so a rebuilt or updated
   `parbake` never waits on a keychain dialog. The login keychain must be unlocked, which a LaunchAgent in a
   logged-in session has and a LaunchDaemon has not.
-- `parbake` is the tool behind `create-vm-bundle.sh`: `ipsw-url`, `install`, `provision` and `setup`,
+- `create` runs the other `parbake` commands in order: `ipsw-url`, `install`, `provision` and `setup`,
   plus `agent install`, which installs or updates the guest agent in a provisioned bundle, and
   `agent-probe`, which checks a development build of the agent against a provisioned bundle.
   `agent install` writes to the bundle's disk image: remove containers made from the bundle first.
