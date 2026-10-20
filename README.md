@@ -51,7 +51,15 @@ scripts/dev-env.sh down            # stop the development services, restart the 
 
 - `parbake create` downloads the latest restore image this host supports into
   `~/Library/Caches/parbake`, resumes interrupted downloads, and reuses completed ones, then
-  installs macOS and provisions the account. `parbake create --help` lists the options.
+  installs macOS and provisions the account. `--restore-image` takes another image instead: a path,
+  or an `http(s)` URL such as a mirror, downloaded into the cache. After a successful download the
+  cache keeps only the image just used, and `--keep-cache` keeps the others.
+- `parbake create --replace` rebuilds an existing bundle. It builds next to it, as
+  `<bundle>.parbake-new`, and takes its place only once provisioning succeeded, so a failed build
+  leaves the existing bundle as it was. The volume needs room for a second bundle meanwhile.
+  Containers made from the old bundle no longer stack on the new disk image: remove them, or let
+  `--label runtime-macos.on-incompatible-overlay=discard` start them over. `parbake create --help`
+  lists the options.
 - Bundles and the restore image cache take about 30 GB each. To keep them off the internal disk, set
   `PARBAKE_HOME` to a directory on an external SSD, for example
   `PARBAKE_HOME=/Volumes/external-disk/parbake parbake create …`: the bundle then defaults to
@@ -80,7 +88,7 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   access goes through `/usr/bin/security`, which creates the entry with `-A`, so a rebuilt or updated
   `parbake` never waits on a keychain dialog. The login keychain must be unlocked, which a LaunchAgent in a
   logged-in session has and a LaunchDaemon has not.
-- `create` runs the other `parbake` commands in order: `ipsw-url`, `install`, `provision` and `setup`,
+- `create` runs the other `parbake` commands in order: `install`, `provision` and `setup`,
   plus `agent install`, which installs or updates the guest agent in a provisioned bundle, and
   `agent-probe`, which checks a development build of the agent against a provisioned bundle.
   `agent install` writes to the bundle's disk image: remove containers made from the bundle first.

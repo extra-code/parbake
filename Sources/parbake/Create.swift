@@ -11,10 +11,14 @@ extension ParbakeTool {
         static let configuration = CommandConfiguration(
             abstract: "Create a VM bundle: download a restore image, install macOS, and provision or set up the guest",
             discussion: """
-                Downloads the latest restore image this host supports into the cache, resuming an \
-                interrupted download and reusing a finished one, installs macOS into a new bundle, and \
-                then either provisions an account (--username, see `parbake provision`) or opens the \
-                guest in a window for the Setup Assistant.
+                Downloads the restore image into the cache, resuming an interrupted download and \
+                reusing a finished one, installs macOS into a new bundle, and then either provisions an \
+                account (--username, see `parbake provision`) or opens the guest in a window for the \
+                Setup Assistant. Without --restore-image, the image is the latest one this host supports. \
+                After a successful download, the cache keeps only the image just used.
+
+                --replace rebuilds an existing bundle: the new one is built next to it and takes its \
+                place only once it is complete, so a failed build leaves the existing bundle as it was.
 
                 PARBAKE_HOME moves the default bundle and the cache to another directory, for example \
                 on an external SSD: the bundle defaults to $PARBAKE_HOME/VM.bundle and the cache to \
@@ -25,8 +29,14 @@ extension ParbakeTool {
         @Option(name: .long, help: "Bundle to create (default: $PARBAKE_HOME/VM.bundle, else ~/VM.bundle)")
         var bundle: String?
 
-        @Option(name: .long, help: "Restore image to install; skips the download")
-        var ipsw: String?
+        @Option(name: .long, help: "Restore image to install: a path, or an http(s) URL to download into the cache (default: the latest image this host supports)")
+        var restoreImage: String?
+
+        @Flag(name: .long, help: "Replace an existing bundle once the new one is complete")
+        var replace = false
+
+        @Flag(name: .long, help: "Keep older restore images in the cache")
+        var keepCache = false
 
         @Option(name: .long, help: "Download directory for restore images (default: $PARBAKE_HOME/cache, else ~/Library/Caches/parbake)")
         var cacheDir: String?
@@ -70,29 +80,65 @@ extension ParbakeTool {
         func run() async throws {
             setvbuf(stdout, nil, _IOLBF, 0)
             let home = ParbakeHome()
-            let bundlePath = bundle ?? home.defaultBundle.path
-            guard !FileManager.default.fileExists(atPath: bundlePath) else {
-                throw ValidationError("\(bundlePath) already exists; remove it or pass --bundle")
+            let target = URL(fileURLWithPath: bundle ?? home.defaultBundle.path)
+            let replacing = replace && FileManager.default.fileExists(atPath: target.path)
+            guard replace || !FileManager.default.fileExists(atPath: target.path) else {
+                throw ValidationError("\(target.path) already exists; pass --replace to rebuild it")
             }
-            try FileManager.default.createDirectory(
-                at: URL(fileURLWithPath: bundlePath).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if replacing {
+                try checkFreeSpace(toReplace: target)
+                print(
+                    """
+                    ==> Rebuilding \(target.path)
+                    Containers made from it will not stack on the new disk image; their start fails unless they
+                    carry --label runtime-macos.on-incompatible-overlay=discard, which starts them over.
+                    """)
+            }
 
-            let restoreImage: String
-            if let ipsw {
-                restoreImage = ipsw
+            let cache = RestoreImageCache(directory: cacheDir.map { URL(fileURLWithPath: $0) } ?? home.cache)
+            let source: RestoreImageSource
+            if let restoreImage {
+                source = try RestoreImageSource(restoreImage)
             } else {
-                restoreImage = try await RestoreImageCache(directory: cacheDir.map { URL(fileURLWithPath: $0) } ?? home.cache).latest().path
+                source = .url(try await VZMacOSRestoreImage.latestSupported.url)
+            }
+            let image: URL
+            switch source {
+            case .file(let file):
+                image = file
+            case .url(let url):
+                if cache.isComplete(cache.file(for: url)) {
+                    print("==> Using cached \(cache.file(for: url).path)")
+                } else {
+                    print("==> Downloading \(url.lastPathComponent) (resumes an interrupted download)")
+                }
+                image = try await cache.fetch(url)
             }
 
-            print("==> Installing macOS into \(bundlePath)")
+            try await BundleReplacement.build(at: target, replacing: replacing) { path in
+                try await build(at: path, from: image)
+            }
+
+            if case .url = source, !keepCache {
+                for removed in try cache.prune(keeping: image) {
+                    print("==> Removed \(removed.lastPathComponent) from the cache")
+                }
+            }
+            print("==> Created \(target.path)")
+            print("Run a container from it with --label runtime-macos.bundle=\(target.path)")
+        }
+
+        private func build(at path: URL, from image: URL) async throws {
+            print("==> Installing macOS into \(path.path)")
             let install = try Install.parse([
-                "--bundle", bundlePath, "--ipsw", restoreImage, "--disk-size", "\(diskSize)", "--cpus", "\(cpus)", "--memory", "\(memory)",
+                "--bundle", path.path, "--restore-image", image.path, "--disk-size", "\(diskSize)", "--cpus", "\(cpus)", "--memory", "\(memory)",
             ])
             try await install.run()
 
             if let username {
                 print("==> Provisioning the account \(username) on the first boot")
-                var arguments = ["--bundle", bundlePath, "--username", username, "--cpus", "\(cpus)", "--memory", "\(memory)"]
+                var arguments = ["--bundle", path.path, "--username", username, "--cpus", "\(cpus)", "--memory", "\(memory)"]
                 arguments += fullName.map { ["--full-name", $0] } ?? []
                 arguments += authorizedKey.map { ["--authorized-key", $0] } ?? []
                 arguments += keychain ? ["--keychain", "--keychain-service", keychainService] : []
@@ -110,42 +156,21 @@ extension ParbakeTool {
                       2. Optional: System Settings > General > Sharing > Remote Login, for SSH access.
                       3. Shut down the guest from its Apple menu; the window closes and parbake continues.
                     """)
-                let setup = try Setup.parse(["--bundle", bundlePath, "--cpus", "\(cpus)", "--memory", "\(memory)"])
+                let setup = try Setup.parse(["--bundle", path.path, "--cpus", "\(cpus)", "--memory", "\(memory)"])
                 try await setup.run()
             }
-
-            print("==> Created \(bundlePath)")
-            print("Run a container from it with --label runtime-macos.bundle=\(bundlePath)")
         }
-    }
-}
 
-/// Restore images downloaded once and reused; a `.done` file next to an image marks it complete.
-struct RestoreImageCache {
-    let directory: URL
-
-    /// Returns the latest restore image this host supports, downloading it first unless the cache
-    /// holds it complete; an interrupted download resumes.
-    func latest() async throws -> URL {
-        let url = try await VZMacOSRestoreImage.latestSupported.url
-        let image = directory.appendingPathComponent(url.lastPathComponent)
-        let done = image.appendingPathExtension("done")
-        if FileManager.default.fileExists(atPath: done.path) {
-            print("==> Using cached \(image.path)")
-            return image
+        /// The new bundle is built next to the existing one, so the volume must hold a second copy.
+        private func checkFreeSpace(toReplace target: URL) throws {
+            let needed = BundleReplacement.allocatedSize(of: target)
+            guard let available = BundleReplacement.availableCapacity(at: target.deletingLastPathComponent()), available < needed else {
+                return
+            }
+            let format = ByteCountFormatter()
+            throw ValidationError(
+                "rebuilding \(target.path) needs \(format.string(fromByteCount: needed)) beside it, "
+                    + "the size of the existing bundle; \(format.string(fromByteCount: available)) is free")
         }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        print("==> Downloading \(url.lastPathComponent) (resumes an interrupted download)")
-        // curl resumes from the partial file and shows progress; URLSession keeps no resume data across runs.
-        let curl = Process()
-        curl.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        curl.arguments = ["--fail", "--location", "--continue-at", "-", "--output", image.path, url.absoluteString]
-        try curl.run()
-        curl.waitUntilExit()
-        guard curl.terminationStatus == 0 else {
-            throw ValidationError("downloading \(url.absoluteString) failed (curl exit status \(curl.terminationStatus)); run create again to resume")
-        }
-        FileManager.default.createFile(atPath: done.path, contents: nil)
-        return image
     }
 }

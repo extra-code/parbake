@@ -13,7 +13,6 @@ struct ParbakeTool: AsyncParsableCommand {
             Agent.self,
             AgentProbe.self,
             Create.self,
-            IPSWURL.self,
             Install.self,
             Provision.self,
             Setup.self,

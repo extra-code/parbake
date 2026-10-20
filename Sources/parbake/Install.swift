@@ -16,7 +16,7 @@ extension ParbakeTool {
         var bundle: String
 
         @Option(name: .long, help: "Path of the restore image (.ipsw) to install")
-        var ipsw: String
+        var restoreImage: String
 
         @Option(name: .long, help: "Size of the sparse disk image in GiB")
         var diskSize: UInt64 = 100
@@ -28,7 +28,7 @@ extension ParbakeTool {
         var memory: UInt64 = 8
 
         func run() async throws {
-            let restoreImageURL = URL(fileURLWithPath: ipsw)
+            let restoreImageURL = URL(fileURLWithPath: restoreImage)
             let restoreImage = try await VZMacOSRestoreImage.image(from: restoreImageURL)
             guard let requirements = restoreImage.mostFeaturefulSupportedConfiguration,
                 requirements.hardwareModel.isSupported
