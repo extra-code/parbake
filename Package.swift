@@ -6,7 +6,7 @@ import PackageDescription
 
 let package = Package(
     name: "parbake",
-    platforms: [.macOS("15")],
+    platforms: [.macOS("27")],
     products: [
         .executable(name: "container-runtime-macos", targets: ["container-runtime-macos"]),
         .executable(name: "parbake", targets: ["parbake"]),

@@ -257,7 +257,7 @@ struct Launch {
         posix_spawn_file_actions_adddup2(&actions, stdin, 0)
         posix_spawn_file_actions_adddup2(&actions, stdout, 1)
         posix_spawn_file_actions_adddup2(&actions, stderr, 2)
-        posix_spawn_file_actions_addchdir_np(&actions, workingDirectory)
+        posix_spawn_file_actions_addchdir(&actions, workingDirectory)
 
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)

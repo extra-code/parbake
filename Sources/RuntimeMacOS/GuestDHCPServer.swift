@@ -10,7 +10,6 @@ import vmnet
 /// The server starts its own interface on the network, reads the frames there and writes a reply
 /// to every DISCOVER and REQUEST from the guest's MAC address. It needs the virtualization
 /// entitlement, and no access to the host's local network.
-@available(macOS 26, *)
 public final class GuestDHCPServer: @unchecked Sendable {
     private let lease: DHCPMessage.Lease
     private let onReply: @Sendable (DHCPMessage.Kind, DHCPMessage.Kind) -> Void

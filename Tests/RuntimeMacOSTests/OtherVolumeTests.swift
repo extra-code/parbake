@@ -37,22 +37,20 @@ struct OtherVolumeTests {
         try body(mountPoint)
     }
 
-    private func makeBundle(in directory: URL, format: MacOSVMBundle.DiskFormat, sizeInBytes: UInt64 = 1 << 30) throws -> URL {
+    private func makeBundle(in directory: URL) throws -> URL {
         let bundle = directory.appendingPathComponent("VM.bundle")
         try FileManager.default.createDirectory(at: bundle, withIntermediateDirectories: true)
         try Data("model".utf8).write(to: bundle.appendingPathComponent(MacOSVMBundle.hardwareModelName))
         try Data(count: 1 << 20).write(to: bundle.appendingPathComponent(MacOSVMBundle.auxiliaryStorageName))
         try VZMacMachineIdentifier().dataRepresentation.write(to: bundle.appendingPathComponent(MacOSVMBundle.machineIdentifierName))
-        try MacOSVMBundle.createDiskImage(
-            at: bundle.appendingPathComponent(MacOSVMBundle.diskImageName), sizeInBytes: sizeInBytes, format: format)
+        try MacOSVMBundle.createDiskImage(at: bundle.appendingPathComponent(MacOSVMBundle.diskImageName), sizeInBytes: 1 << 30)
         return bundle
     }
 
     @Test
     func testAnInstanceOfAnASIFBaseOnAnotherVolumeCopiesTheSmallFiles() throws {
-        guard #available(macOS 27, *) else { return }
         try withHFSVolume { volume in
-            let base = try makeBundle(in: volume, format: .asif)
+            let base = try makeBundle(in: volume)
             let destination = FileManager.default.temporaryDirectory.appendingPathComponent("vm-instance-\(UUID())")
             defer { try? FileManager.default.removeItem(at: destination) }
 
@@ -61,18 +59,6 @@ struct OtherVolumeTests {
             #expect(FileManager.default.contents(atPath: instance.auxiliaryStorageURL.path)?.count == 1 << 20)
             #expect(FileManager.default.fileExists(atPath: instance.overlayImageURL.path))
             _ = try instance.storageDeviceAttachment()
-        }
-    }
-
-    @Test
-    func testAnInstanceOfARawBaseOnAnotherVolumeIsRefused() throws {
-        try withHFSVolume { volume in
-            // A raw image is not sparse on HFS+, so it must fit on the small test volume.
-            let base = try makeBundle(in: volume, format: .raw, sizeInBytes: 16 << 20)
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("vm-instance-\(UUID())")
-            defer { try? FileManager.default.removeItem(at: destination) }
-
-            #expect(throws: (any Error).self) { try MacOSVMBundle(url: base).instance(at: destination) }
         }
     }
 }

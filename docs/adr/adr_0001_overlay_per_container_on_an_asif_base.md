@@ -14,7 +14,7 @@
 
 **Domain Tags:** storage, virtualization
 **Supersedes:** N/A
-**Superseded By:** N/A
+**Superseded By:** [ADR 0007](adr_0007_hosts_run_macos_27_and_disks_are_asif.md) for the raw disk path
 
 ## Context
 
@@ -135,3 +135,4 @@ overlay, as Apple's sample does, keeping the instance's machine identifier.
 
 - 2026-10-18 — Initial version.
 - 2026-10-18 — Apple's shared-base sample as confirmation; the `runtime-macos.on-incompatible-overlay` label.
+- 2026-10-20 — The raw disk path is superseded by ADR 0007: hosts run macOS 27, every bundle disk is ASIF.

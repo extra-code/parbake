@@ -104,9 +104,6 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
 
         let network = VZVirtioNetworkDeviceConfiguration()
         if let guestNetwork {
-            guard #available(macOS 26, *) else {
-                throw ContainerizationError(.unsupported, message: "a vmnet network attachment needs a macOS 26 or later host")
-            }
             network.attachment = VZVmnetNetworkDeviceAttachment(network: guestNetwork.reference)
             if let macAddress = guestNetwork.macAddress {
                 guard let address = VZMACAddress(string: macAddress) else {

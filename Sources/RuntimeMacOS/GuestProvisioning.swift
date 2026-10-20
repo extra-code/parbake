@@ -26,12 +26,9 @@ public struct GuestProvisioning: Sendable {
 
     /// Start options that carry the settings.
     ///
-    /// Throws when the host runs a macOS earlier than 27 or Virtualization.framework rejects
-    /// the full name, the username or the password; nothing has booted at that point.
+    /// Throws when Virtualization.framework rejects the full name, the username or the password;
+    /// nothing has booted at that point.
     public func startOptions() throws -> VZMacOSVirtualMachineStartOptions {
-        guard #available(macOS 27, *) else {
-            throw ContainerizationError(.unsupported, message: "guest provisioning needs a macOS 27 or later host")
-        }
         let options = VZMacGuestProvisioningOptions()
         options.fullName = fullName
         options.username = username

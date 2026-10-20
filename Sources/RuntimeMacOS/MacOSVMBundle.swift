@@ -90,13 +90,19 @@ public struct MacOSVMBundle: Sendable {
         return GuestShell(username: username, credential: .key(guestKeyURL))
     }
 
-    /// The format of the bundle's disk image.
-    public func diskFormat() throws -> DiskFormat {
-        guard #available(macOS 27, *) else {
-            return .raw
+    /// Refuses a bundle whose disk image is not ASIF: only an ASIF image carries the layer UUID
+    /// that binds a container's overlay to it.
+    public func checkDiskImageIsASIF() throws {
+        let image: DiskImage
+        do {
+            image = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
+        } catch {
+            throw ContainerizationError(.invalidArgument, message: "cannot open the disk image of \(url.path)", cause: error)
         }
-        let image = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
-        return image.format == .asif ? .asif : .raw
+        guard image.format == .asif else {
+            throw ContainerizationError(
+                .unsupported, message: "\(url.path) has a raw disk image; rebuild it with parbake create, which creates an ASIF disk image")
+        }
     }
 
     /// The storage the guest boots from: the disk image, or the disk image read-only with the
@@ -104,9 +110,6 @@ public struct MacOSVMBundle: Sendable {
     public func storageDeviceAttachment() throws -> VZDiskImageStorageDeviceAttachment {
         guard FileManager.default.fileExists(atPath: overlayImageURL.path) else {
             return try VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
-        }
-        guard #available(macOS 27, *) else {
-            throw ContainerizationError(.unsupported, message: "\(url.path) has an overlay, which needs a macOS 27 or later host")
         }
         do {
             let base = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
@@ -123,33 +126,16 @@ public struct MacOSVMBundle: Sendable {
         }
     }
 
-    /// The format of a new bundle's disk image.
-    public enum DiskFormat: String, Sendable, CaseIterable {
-        /// Apple Sparse Image Format (macOS 27 or later host): stays sparse when copied, and
-        /// carries a layer UUID that overlays stacked on it are bound to.
-        case asif
-        /// One file block per disk block, sparse only on APFS.
-        case raw
-
-        /// ASIF where the host supports DiskImageKit, raw otherwise.
-        public static var preferred: DiskFormat {
-            if #available(macOS 27, *) { return .asif }
-            return .raw
-        }
-    }
-
     /// Creates an empty bundle at `url` for a guest with `hardwareModel`.
     ///
-    /// The disk image holds `diskSizeInBytes` in `diskFormat`, and the machine identifier
-    /// is new. Install macOS into the bundle before booting it.
-    public static func create(
-        at url: URL, hardwareModel: VZMacHardwareModel, diskSizeInBytes: UInt64, diskFormat: DiskFormat = .preferred
-    ) throws -> MacOSVMBundle {
+    /// The disk image is an ASIF image of `diskSizeInBytes`, and the machine identifier is new.
+    /// Install macOS into the bundle before booting it.
+    public static func create(at url: URL, hardwareModel: VZMacHardwareModel, diskSizeInBytes: UInt64) throws -> MacOSVMBundle {
         guard !FileManager.default.fileExists(atPath: url.path) else {
             throw ContainerizationError(.exists, message: "\(url.path) already exists")
         }
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try createDiskImage(at: url.appendingPathComponent(diskImageName), sizeInBytes: diskSizeInBytes, format: diskFormat)
+        try createDiskImage(at: url.appendingPathComponent(diskImageName), sizeInBytes: diskSizeInBytes)
 
         _ = try VZMacAuxiliaryStorage(
             creatingStorageAt: url.appendingPathComponent(auxiliaryStorageName),
@@ -161,37 +147,25 @@ public struct MacOSVMBundle: Sendable {
         return try MacOSVMBundle(url: url)
     }
 
-    static func createDiskImage(at diskImageURL: URL, sizeInBytes: UInt64, format: DiskFormat) throws {
-        switch format {
-        case .asif:
-            guard #available(macOS 27, *) else {
-                throw ContainerizationError(.unsupported, message: "an ASIF disk image needs a macOS 27 or later host")
-            }
-            let blockSize = DiskImage.BlockSize.bytes512
-            let blockCount = Int((sizeInBytes + UInt64(blockSize.rawValue) - 1) / UInt64(blockSize.rawValue))
-            do {
-                _ = try DiskImage(creating: .asif(url: diskImageURL, blockCount: blockCount, blockSize: blockSize))
-            } catch {
-                throw ContainerizationError(.internalError, message: "failed to create \(diskImageURL.path)", cause: error)
-            }
-        case .raw:
-            guard FileManager.default.createFile(atPath: diskImageURL.path, contents: nil) else {
-                throw ContainerizationError(.internalError, message: "failed to create \(diskImageURL.path)")
-            }
-            let disk = try FileHandle(forWritingTo: diskImageURL)
-            defer { try? disk.close() }
-            try disk.truncate(atOffset: sizeInBytes)
+    static func createDiskImage(at diskImageURL: URL, sizeInBytes: UInt64) throws {
+        let blockSize = DiskImage.BlockSize.bytes512
+        let blockCount = Int((sizeInBytes + UInt64(blockSize.rawValue) - 1) / UInt64(blockSize.rawValue))
+        do {
+            _ = try DiskImage(creating: .asif(url: diskImageURL, blockCount: blockCount, blockSize: blockSize))
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to create \(diskImageURL.path)", cause: error)
         }
     }
 
     /// Creates the bundle one container boots in `destination`; the source bundle stays unchanged.
     ///
-    /// With an ASIF disk image, the instance links to that image, reads it read-only and writes
-    /// into a new ASIF overlay that is bound to the image's layer UUID. With a raw disk image,
-    /// the instance's disk is an APFS clone. The auxiliary storage and hardware model are APFS
-    /// clones, and so are the provisioning files and the agent version when the bundle has them. The
-    /// machine identifier is new, so every instance has its own serial number and platform UUID.
+    /// The instance links to the bundle's ASIF disk image, reads it read-only and writes into a
+    /// new ASIF overlay that is bound to the image's layer UUID. The auxiliary storage and hardware
+    /// model are APFS clones, or copies on another volume, and so are the provisioning files and the
+    /// agent version when the bundle has them. The machine identifier is new, so every instance has
+    /// its own serial number and platform UUID. A bundle with a raw disk image is refused.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
+        try checkDiskImageIsASIF()
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Self.cloneFiles([Self.auxiliaryStorageName, Self.hardwareModelName], from: url, to: destination)
         let provisioningFiles = [Self.provisionedName, Self.guestKeyName, Self.agentName].filter {
@@ -199,11 +173,6 @@ public struct MacOSVMBundle: Sendable {
         }
         try Self.cloneFiles(provisioningFiles, from: url, to: destination)
         try VZMacMachineIdentifier().dataRepresentation.write(to: destination.appendingPathComponent(Self.machineIdentifierName))
-        guard #available(macOS 27, *), try diskFormat() == .asif else {
-            // A raw disk image copied across volumes takes its full size; only a clone is cheap.
-            try Self.cloneFiles([Self.diskImageName], from: url, to: destination, copyWhenNotClonable: false)
-            return try MacOSVMBundle(url: destination)
-        }
         try linkBaseAndCreateOverlay(in: destination)
         return try MacOSVMBundle(url: destination)
     }
@@ -212,11 +181,8 @@ public struct MacOSVMBundle: Sendable {
     /// auxiliary storage and the overlay are made anew from `source`, the machine identifier stays.
     ///
     /// The guest's writes since the instance was created are lost.
-    @available(macOS 27, *)
     public func resetOverlay(from source: MacOSVMBundle) throws {
-        guard try source.diskFormat() == .asif else {
-            throw ContainerizationError(.invalidArgument, message: "\(source.url.path) has no ASIF disk image to stack an overlay on")
-        }
+        try source.checkDiskImageIsASIF()
         for name in [Self.overlayImageName, Self.diskImageName, Self.auxiliaryStorageName] {
             let file = url.appendingPathComponent(name)
             if (try? FileManager.default.destinationOfSymbolicLink(atPath: file.path)) != nil || FileManager.default.fileExists(atPath: file.path) {
@@ -228,7 +194,6 @@ public struct MacOSVMBundle: Sendable {
     }
 
     /// Links this bundle's disk image as `Disk.img` in `destination` and creates an ASIF overlay on it there.
-    @available(macOS 27, *)
     private func linkBaseAndCreateOverlay(in destination: URL) throws {
         let diskImageLink = destination.appendingPathComponent(Self.diskImageName)
         try FileManager.default.createSymbolicLink(at: diskImageLink, withDestinationURL: diskImageURL.resolvingSymlinksInPath())
@@ -241,20 +206,9 @@ public struct MacOSVMBundle: Sendable {
         }
     }
 
-    /// Clones the bundle into `destination` with APFS copy-on-write clones.
-    ///
-    /// The clone shares unchanged blocks with the source, so it takes no extra space
-    /// up front and the guest's writes never reach the source bundle.
-    public func clone(to destination: URL) throws -> MacOSVMBundle {
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        try Self.cloneFiles(Self.fileNames, from: url, to: destination, copyWhenNotClonable: false)
-        return try MacOSVMBundle(url: destination)
-    }
-
-    /// Clones `names` from `url` into `destination` with APFS copy-on-write clones. Where no clone
-    /// is possible, because `destination` is on another volume or not on APFS, the files are copied
-    /// when `copyWhenNotClonable` is set and the call fails otherwise.
-    private static func cloneFiles(_ names: [String], from url: URL, to destination: URL, copyWhenNotClonable: Bool = true) throws {
+    /// Clones `names` from `url` into `destination` with APFS copy-on-write clones, and copies them
+    /// where no clone is possible because `destination` is on another volume or not on APFS.
+    private static func cloneFiles(_ names: [String], from url: URL, to destination: URL) throws {
         for name in names {
             let source = url.appendingPathComponent(name)
             let target = destination.appendingPathComponent(name)
@@ -266,12 +220,6 @@ public struct MacOSVMBundle: Sendable {
                 throw ContainerizationError(
                     .internalError, message: "failed to clone \(source.path) to \(target.path)",
                     cause: POSIXError(POSIXErrorCode(rawValue: cloneError) ?? .EIO))
-            }
-            guard copyWhenNotClonable else {
-                throw ContainerizationError(
-                    .unsupported,
-                    message: "cannot clone \(source.path) to \(target.path): both must be on the same APFS volume; "
-                        + "a bundle with an ASIF disk image, the default on macOS 27, may live on another volume")
             }
             guard copyfile(source.path, target.path, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
                 throw ContainerizationError(

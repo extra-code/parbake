@@ -11,31 +11,31 @@ Parbake runs ephemeral macOS guests on Apple silicon through Virtualization.fram
 `container-runtime-macos`, a runtime plugin for [apple/container](https://github.com/apple/container).
 
 - Each container boots its own instance of an installed macOS VM bundle; the source bundle stays unchanged.
-  With an ASIF disk image (the default on a macOS 27 host), the instance reads the bundle's disk read-only
-  and writes into its own DiskImageKit overlay, which refuses to stack on any other base. With a raw disk
-  image, the instance is an APFS clone.
+  The instance reads the bundle's ASIF disk image read-only and writes into its own DiskImageKit overlay,
+  which refuses to stack on any other base. A bundle with a raw disk image is refused.
 - The init process of the container is the guest: `container start` boots it, and the container exits when the guest shuts down.
-- `container stop` shuts a provisioned guest down over SSH with its `GuestKey` and waits at least 60 seconds
-  for it, whatever `--time` says; a guest without that key gets a power-button request. Either way the guest
+- `container stop` shuts the guest down through the guest agent, over SSH with its `GuestKey` when the
+  bundle has no agent, and waits at least 60 seconds for it, whatever `--time` says; a guest without
+  either gets a power-button request. Either way the guest
   is stopped forcibly once the wait passes. `container kill` shuts the guest down the same way, and
   `container kill -s KILL` stops it at once.
 - The guest joins the container's network, by default container's `default` network: the network
   allocates its address and MAC address, and `container ls` shows the address. That network runs no
   DHCP server, so the runtime starts its own interface on the network and answers the guest's DHCP
   requests with that address, the gateway and the DNS servers. The guest image needs no change. A
-  container without a network, or a host earlier than macOS 26, uses Virtualization.framework NAT.
+  container without a network uses Virtualization.framework NAT.
 
 How the plugin, the guest agent and Apple `container` work together: [docs/architecture.md](docs/architecture.md).
 
 ## Requirements
 
-- Mac with Apple silicon, macOS 15 or later, Xcode 27 (macOS 27 SDK)
+- Mac with Apple silicon, macOS 27 or later, Xcode 27 (macOS 27 SDK)
 - [OCX](https://ocx.sh) for `task` and the lint tools; run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`
-- For `--username` provisioning: a macOS 27 or later host and guest
+- For `--username` provisioning and the guest agent: a macOS 27 or later guest
 - An apple/container build whose plugin config supports `[runtimeConfig]`: the
   [extra-code/container](https://github.com/extra-code/container) fork at the revision `Package.swift` pins.
   SwiftPM fetches it, and `dev-env.sh` builds it
-- An installed macOS VM bundle with `Disk.img`, `AuxiliaryStorage`, `HardwareModel` and `MachineIdentifier`, such as the bundle Apple's "Running macOS in a virtual machine on Apple silicon" sample creates
+- A macOS VM bundle with an ASIF `Disk.img`, `AuxiliaryStorage`, `HardwareModel` and `MachineIdentifier`, as `parbake create` builds it
 - Do not boot a bundle read-write while containers run from it: their overlays build on its disk as it is.
 
 ## Quick start
@@ -56,8 +56,8 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   `PARBAKE_HOME` to a directory on an external SSD, for example
   `PARBAKE_HOME=/Volumes/external-disk/parbake parbake create …`: the bundle then defaults to
   `$PARBAKE_HOME/VM.bundle` and the cache to `$PARBAKE_HOME/cache`. Containers keep their overlays in
-  container's data directory and link to the bundle's disk image, so a bundle with an ASIF disk image
-  may live on another volume. A raw disk image must be on the same APFS volume as the containers.
+  container's data directory and link to the bundle's disk image, so a bundle may live on another
+  volume.
   Keep the disk attached while a guest runs from it, and prefer an SSD to a USB stick. Format the
   disk as APFS: on a Journaled HFS+ SSD over USB, one guest's disk writes stalled in the kernel
   during its first boot; every access to its disk image hung, and the guest process could not be ended.

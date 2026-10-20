@@ -62,7 +62,7 @@ actor RuntimeService {
     private var attachment: Attachment?
     private var networkSession: XPCClientSession?
     /// Answers the guest's DHCP requests on the container network, which runs no DHCP server.
-    private var dhcpServer: (any Sendable)?
+    private var dhcpServer: GuestDHCPServer?
     private var startedDate: Date?
 
     init(root: URL, connection: xpc_connection_t, log: Logger) {
@@ -133,7 +133,7 @@ actor RuntimeService {
                     network: network
                 )
             } catch let error as MacOSVMBundle.IncompatibleOverlayError {
-                guard policy == .discard, #available(macOS 27, *) else {
+                guard policy == .discard else {
                     throw ContainerizationError(
                         .invalidState,
                         message: "\(error); set --label \(Self.incompatibleOverlayLabel)=discard to start the instance over"
@@ -349,11 +349,10 @@ actor RuntimeService {
     }
 
     /// Allocates the guest's address on the container's first network and returns that network,
-    /// or nil when the container has no network or the host runs a macOS earlier than 26; the
-    /// guest then uses Virtualization.framework NAT.
+    /// or nil when the container has no network; the guest then uses Virtualization.framework NAT.
     private func allocateNetwork(_ message: XPCMessage, configuration: ContainerConfiguration) async throws -> GuestNetwork? {
         let infos = (try? message.networkBootstrapInfos()) ?? []
-        guard #available(macOS 26, *), let info = infos.first, let attachmentConfiguration = configuration.networks.first else {
+        guard let info = infos.first, let attachmentConfiguration = configuration.networks.first else {
             return nil
         }
         let client = NetworkClient(id: attachmentConfiguration.network, plugin: info.plugin)
@@ -387,7 +386,6 @@ actor RuntimeService {
 
     /// Starts the DHCP server that gives the guest with `macAddress` the attachment's address,
     /// gateway and DNS servers.
-    @available(macOS 26, *)
     private func startDHCPServer(
         on network: vmnet_network_ref, attachment: Attachment, macAddress: String, configuration: ContainerConfiguration
     ) throws {
@@ -414,9 +412,7 @@ actor RuntimeService {
     }
 
     private func releaseNetwork() {
-        if #available(macOS 26, *), let server = dhcpServer as? GuestDHCPServer {
-            server.stop()
-        }
+        dhcpServer?.stop()
         dhcpServer = nil
         networkSession?.close()
         networkSession = nil

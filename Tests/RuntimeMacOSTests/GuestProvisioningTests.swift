@@ -66,7 +66,6 @@ struct LockContentionTests {
 struct GuestProvisioningTests {
     @Test
     func testValidSettingsGiveStartOptions() throws {
-        guard #available(macOS 27, *) else { return }
         let options = try GuestProvisioning(fullName: "CI", username: "ci", password: "correct-horse-battery").startOptions()
         #expect(options.guestProvisioningOptions?.username == "ci")
         #expect(options.guestProvisioningOptions?.logsInAutomatically == true)
@@ -75,7 +74,6 @@ struct GuestProvisioningTests {
 
     @Test
     func testAnEmptyPasswordIsRejectedBeforeBoot() {
-        guard #available(macOS 27, *) else { return }
         #expect(throws: (any Error).self) {
             try GuestProvisioning(fullName: "CI", username: "ci", password: "").startOptions()
         }
@@ -83,7 +81,6 @@ struct GuestProvisioningTests {
 
     @Test
     func testAnInvalidUsernameIsRejectedBeforeBoot() {
-        guard #available(macOS 27, *) else { return }
         #expect(throws: (any Error).self) {
             try GuestProvisioning(fullName: "CI", username: "not a user name", password: "correct-horse-battery").startOptions()
         }
