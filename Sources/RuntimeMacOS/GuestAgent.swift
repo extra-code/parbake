@@ -364,8 +364,15 @@ private final class AgentProcess: @unchecked Sendable {
     private func copy(from source: FileHandle, to destination: FileHandle) {
         copies.enter()
         let thread = Thread { [copies] in
-            while let data = try? source.read(upToCount: 64 * 1024), !data.isEmpty {
-                guard (try? destination.write(contentsOf: data)) != nil else {
+            // read(2) returns what is there; FileHandle.read(upToCount:) waits for the full count,
+            // which holds interactive output back until the process ends.
+            var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+            while true {
+                let count = read(source.fileDescriptor, &buffer, buffer.count)
+                if count < 0 && errno == EINTR {
+                    continue
+                }
+                guard count > 0, (try? destination.write(contentsOf: Data(buffer[0..<count]))) != nil else {
                     break
                 }
             }

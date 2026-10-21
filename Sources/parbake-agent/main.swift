@@ -13,6 +13,8 @@ let versionVariable = "CONTAINER_RUNTIME_MACOS_AGENT"
 /// The vsock port containerization's agents serve on.
 let defaultPort = 1024
 
+ControllingTerminal.runIfRequested(CommandLine.arguments)
+
 let arguments = CommandLine.arguments.dropFirst()
 let port = arguments.first.flatMap(Int.init) ?? defaultPort
 

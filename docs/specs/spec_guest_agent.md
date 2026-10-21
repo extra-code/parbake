@@ -96,10 +96,10 @@ and records the process; `StartProcess(id)` spawns it and returns its PID.
   `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`; `process.env` overrides them.
 - Process IDs are unique per agent run; a second `CreateProcess` with a known ID fails with
   `ALREADY_EXISTS`.
-- Every process starts in a process group of its own, with default signal dispositions and an empty
-  signal mask, and inherits no descriptor but 0 to 2. An ignored signal survives `exec`: without the
-  reset, a process inherits whatever the agent's launcher ignored, and an inherited ignored SIGTERM
-  never stops it.
+- Every process starts in a process group of its own (with a terminal: a session of its own), with
+  default signal dispositions and an empty signal mask, and inherits no descriptor but 0 to 2. An
+  ignored signal survives `exec`: without the reset, a process inherits whatever the agent's
+  launcher ignored, and an inherited ignored SIGTERM never stops it.
 - An agent that does not run as root starts processes only as its own account and refuses any other
   with `FAILED_PRECONDITION`.
 
@@ -109,8 +109,10 @@ and records the process; `StartProcess(id)` spawns it and returns its PID.
   `StartProcess` returns; a failed connection fails `StartProcess`.
 - Without a terminal: stdin, stdout and stderr are separate pipes copied to and from their
   connections.
-- With a terminal: one PTY (`openpty`); its output goes to the stdout connection, stdin feeds it, no
-  stderr connection is used. `ResizeProcess` sets the size (`TIOCSWINSZ`).
+- With a terminal: one PTY (`posix_openpt`) that is the process's controlling terminal, so Ctrl-C
+  sends SIGINT and a shell gets job control; its output goes to the stdout connection, stdin feeds
+  it, no stderr connection is used. `process.consoleSize` and `ResizeProcess` set the size
+  (`TIOCSWINSZ`); `TERM` defaults to `xterm`.
 - `CloseProcessStdin` closes the process's stdin.
 - Output still buffered when the process exits is written before `WaitProcess` returns.
 
@@ -247,7 +249,11 @@ first slice; until then they return `UNIMPLEMENTED`.
   `container exec mac1 true` took 54 ms. A signal the CLI forwards never reaches the runtime, because
   apple/container's API server drops it ([apple/container#1941](https://github.com/apple/container/issues/1941));
   the agent's own signal path is covered by the run through `Vminitd` above.
-- **V-3:** `container exec -it mac1 zsh` gets a PTY; a terminal resize reaches `stty size`.
+- **V-3 — passed 2026-10-21:** `container exec -it mac1 zsh` gets a PTY; a terminal resize reaches
+  `stty size`. Measured with an expect script on a provisioned bundle: `tty` named a `/dev/ttys` device with
+  `TERM=xterm`; `stty size` showed the initial 24 80 and 40 100 after a resize; Ctrl-C ended
+  `sleep 100` with 130 and returned to the prompt; the shell's process group owned the terminal;
+  `exit 5` ended `container exec` with 5. The non-terminal checks of V-2 passed again.
 - **V-4:** `container exec mac1 security list-keychains` as the guest account lists its login keychain;
   `xcrun simctl list` answers. **Keychain half passed 2026-10-19:** it listed
   `/Users/runner/Library/Keychains/login.keychain-db`. The simulator half needs a bundle with Xcode.

@@ -219,7 +219,10 @@ struct SandboxService: SandboxContext.SimpleServiceProtocol {
     }
 
     func resizeProcess(request: ResizeProcessRequest, context: ServerContext) async throws -> ResizeProcessResponse {
-        throw Self.unimplemented("resizeProcess")
+        try await mapErrors {
+            try await processes.process(request.id).resize(columns: request.columns, rows: request.rows)
+            return ResizeProcessResponse()
+        }
     }
 
     func containerStatistics(request: ContainerStatisticsRequest, context: ServerContext) async throws -> ContainerStatisticsResponse {

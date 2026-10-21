@@ -7,8 +7,9 @@ import Foundation
 
 /// A process the agent starts in the guest for the host.
 ///
-/// The process's standard streams are pipes copied to and from vsock connections to the host;
-/// the host listens on the ports and the agent connects to them when the process starts.
+/// The process's standard streams are pipes, or one pseudo-terminal for a process with a terminal,
+/// copied to and from vsock connections to the host; the host listens on the ports and the agent
+/// connects to them when the process starts.
 final class GuestProcess: @unchecked Sendable {
     struct Exit: Sendable {
         let code: Int32
@@ -22,14 +23,13 @@ final class GuestProcess: @unchecked Sendable {
     private var pid: pid_t = 0
     private var stdinWriter: Int32 = -1
     private var stdinConnection: Int32 = -1
+    private var terminalController: Int32 = -1
     private var exit: Exit?
     private var waiters: [CheckedContinuation<Exit, Never>] = []
-    private let copies = DispatchGroup()
+    /// The copies of the process's output; its exit is reported once they finished, never before.
+    private let outputCopies = DispatchGroup()
 
     init(id: String, process: ContainerizationOCI.Process, stdin: UInt32?, stdout: UInt32?, stderr: UInt32?) throws {
-        guard !process.terminal else {
-            throw AgentError.unimplemented("a process with a terminal")
-        }
         guard !process.args.isEmpty else {
             throw AgentError.invalidArgument("the process has no arguments")
         }
@@ -46,6 +46,9 @@ final class GuestProcess: @unchecked Sendable {
     /// Connects the streams, spawns the process and returns its PID.
     func start() throws -> pid_t {
         let launch = try Launch(process: process)
+        if process.terminal {
+            return try startWithTerminal(launch)
+        }
         var fileDescriptors: [Int32] = []
         defer { fileDescriptors.forEach { close($0) } }
 
@@ -85,10 +88,74 @@ final class GuestProcess: @unchecked Sendable {
         } else {
             closeStdin()
         }
-        copy(from: stdout.read, to: stdoutConnection ?? -1, closeSource: true, closeDestination: true)
-        copy(from: stderr.read, to: stderrConnection ?? -1, closeSource: true, closeDestination: true)
+        copy(from: stdout.read, to: stdoutConnection ?? -1, closeSource: true, closeDestination: true, group: outputCopies)
+        copy(from: stderr.read, to: stderrConnection ?? -1, closeSource: true, closeDestination: true, group: outputCopies)
         watchExit(pid)
         return pid
+    }
+
+    /// Starts the process on a new pseudo-terminal: its controller carries standard input and
+    /// output, and the process leads a session with the terminal as its controlling terminal.
+    private func startWithTerminal(_ launch: Launch) throws -> pid_t {
+        let terminal = try PseudoTerminal()
+        // The controller has two descriptors so that each copy closes its own: one descriptor
+        // closed under the other copy could be reused by an unrelated file and receive its data.
+        let controllerWriter = dup(terminal.controller)
+        guard controllerWriter >= 0 else {
+            let error = errno
+            close(terminal.controller)
+            close(terminal.device)
+            throw AgentError.posix("dup", error)
+        }
+        let stdinConnection: Int32?
+        let stdoutConnection: Int32?
+        let pid: pid_t
+        do {
+            defer { close(terminal.device) }
+            stdinConnection = try ports.stdin.map(VsockConnection.toHost)
+            stdoutConnection = try ports.stdout.map(VsockConnection.toHost)
+            pid = try launch.spawn(stdin: terminal.device, stdout: terminal.device, stderr: terminal.device, controllingTerminal: true)
+        } catch {
+            close(terminal.controller)
+            close(controllerWriter)
+            throw error
+        }
+        lock.withLock {
+            self.pid = pid
+            self.stdinWriter = controllerWriter
+            self.stdinConnection = stdinConnection ?? -1
+            self.terminalController = terminal.controller
+        }
+        if let stdinConnection {
+            copy(from: stdinConnection, to: controllerWriter, closeSource: true, closeDestination: true) { [weak self] in
+                self?.lock.withLock {
+                    self?.stdinWriter = -1
+                    self?.stdinConnection = -1
+                }
+            }
+        } else {
+            closeStdin()
+        }
+        // The controller reads EIO once the last process holding the terminal closed it.
+        copy(from: terminal.controller, to: stdoutConnection ?? -1, closeSource: true, closeDestination: true, group: outputCopies) {
+            [weak self] in
+            self?.lock.withLock { self?.terminalController = -1 }
+        }
+        watchExit(pid)
+        return pid
+    }
+
+    /// Sets the window size of the process's terminal; a process without a terminal ignores it.
+    func resize(columns: UInt32, rows: UInt32) throws {
+        try lock.withLock {
+            guard terminalController >= 0 else {
+                return
+            }
+            var size = winsize(ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: columns), ws_xpixel: 0, ws_ypixel: 0)
+            guard ioctl(terminalController, PseudoTerminal.setWindowSize, &size) == 0 else {
+                throw AgentError.posix("ioctl(TIOCSWINSZ)", errno)
+            }
+        }
     }
 
     /// Waits until the process has exited and its output has reached the host.
@@ -135,10 +202,13 @@ final class GuestProcess: @unchecked Sendable {
     }
 
     /// Copies `source` to `destination` on its own thread until `source` ends; `destination` -1
-    /// discards the data.
-    private func copy(from source: Int32, to destination: Int32, closeSource: Bool, closeDestination: Bool, done: (@Sendable () -> Void)? = nil) {
-        copies.enter()
-        let thread = Thread { [copies] in
+    /// discards the data. A copy in `group` keeps the group entered until it ends.
+    private func copy(
+        from source: Int32, to destination: Int32, closeSource: Bool, closeDestination: Bool, group: DispatchGroup? = nil,
+        done: (@Sendable () -> Void)? = nil
+    ) {
+        group?.enter()
+        let thread = Thread {
             var buffer = [UInt8](repeating: 0, count: 64 * 1024)
             reading: while true {
                 let count = read(source, &buffer, buffer.count)
@@ -170,7 +240,7 @@ final class GuestProcess: @unchecked Sendable {
                 close(destination)
             }
             done?()
-            copies.leave()
+            group?.leave()
         }
         thread.start()
     }
@@ -194,8 +264,10 @@ final class GuestProcess: @unchecked Sendable {
             guard let self else {
                 return
             }
-            // Output written before the exit reaches the host before the exit is reported.
-            self.copies.wait()
+            // Output written before the exit reaches the host before the exit is reported. Standard
+            // input is not waited for: the host may keep it open after the process ended.
+            self.outputCopies.wait()
+            self.closeStdin()
             let exit = Exit(code: code, date: Date())
             let waiters = self.lock.withLock {
                 self.exit = exit
@@ -224,6 +296,10 @@ struct Launch {
             "SHELL": account.shell,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin",
         ]
+        if process.terminal {
+            // The same default containerization gives a Linux process with a terminal.
+            environment["TERM"] = "xterm"
+        }
         for entry in process.env {
             let pair = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             environment[String(pair[0])] = pair.count == 2 ? String(pair[1]) : ""
@@ -250,7 +326,19 @@ struct Launch {
         }
     }
 
-    func spawn(stdin: Int32, stdout: Int32, stderr: Int32) throws -> pid_t {
+    /// Spawns the process. With `controllingTerminal`, it starts through the agent's own
+    /// `--controlling-terminal` mode, which makes `stdin`, a terminal, the controlling terminal of
+    /// a new session before it executes the process; `posix_spawn` cannot do that itself.
+    func spawn(stdin: Int32, stdout: Int32, stderr: Int32, controllingTerminal: Bool = false) throws -> pid_t {
+        var executable = self.executable
+        var arguments = self.arguments
+        if controllingTerminal {
+            guard let agent = Bundle.main.executablePath else {
+                throw AgentError.failedPrecondition("the agent cannot find its own executable")
+            }
+            arguments = [agent, ControllingTerminal.flag] + arguments
+            executable = agent
+        }
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
         defer { posix_spawn_file_actions_destroy(&actions) }
@@ -265,8 +353,11 @@ struct Launch {
         // A process group of its own, so a signal reaches every process it starts; no descriptor but 0 to 2 leaks.
         // Default dispositions and an empty mask: an ignored signal survives exec, and a process
         // that inherits an ignored SIGTERM never stops on `container exec` kill or stop.
+        // A process with a terminal leads a new session instead, whose process group has its PID too;
+        // a group leader could not call setsid, and the terminal would never become controlling.
+        let group = controllingTerminal ? POSIX_SPAWN_SETSID : POSIX_SPAWN_SETPGROUP
         posix_spawnattr_setflags(
-            &attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
+            &attributes, Int16(group | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
         posix_spawnattr_setpgroup(&attributes, 0)
         var allSignals = sigset_t()
         sigfillset(&allSignals)
