@@ -113,6 +113,27 @@ Read from top to bottom, the layers are these.
   use it.
 - **Merging.** No API folds an overlay back into its base. A new base is a new `parbake create`.
 
+### Layer bundles
+
+A layer bundle puts one more level between the base and the overlays, for software that every
+container needs and that takes long to install, such as Xcode. `parbake layer` creates it.
+
+```mermaid
+flowchart TB
+    o1["<b>Overlay.asif</b> (container)<br/>read-write<br/>parent UUID = layer"]
+    layer["<b>Xcode.bundle/Layer.asif</b><br/>read-only under an overlay<br/>written once by parbake layer<br/>parent UUID = base"]
+    base["<b>VM.bundle/Disk.img</b><br/>ASIF base, read-only"]
+    o1 -->|"blocks not in the overlay"| layer
+    layer -->|"blocks not in the layer"| base
+```
+
+- The layer bundle links `Disk.img` to the base and holds its own `Layer.asif`. While
+  `parbake layer` runs its script, the layer is the writable top. Afterwards only overlays write.
+- A container's instance links both files and stacks its overlay on them, so the stack is three
+  levels. A layer on a layer is refused, since Apple advises keeping stacks shallow.
+- The binding works at every level: a rebuilt base no longer carries the layer's parent UUID, and
+  a rebuilt layer no longer carries the overlays' parent UUID.
+
 When a bundle is rebuilt, its base gets a new layer UUID. Existing overlays then fail to stack. The
 label `runtime-macos.on-incompatible-overlay` decides what follows: `fail` stops the start, and
 `discard` starts the container over on the new base

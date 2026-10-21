@@ -192,3 +192,105 @@ struct ResetOverlayTests {
         #expect(try Data(contentsOf: instance.auxiliaryStorageURL) == Data(MacOSVMBundle.auxiliaryStorageName.utf8))
     }
 }
+
+struct LayerBundleTests {
+    private func makeBundle() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("vm-base-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for name in MacOSVMBundle.fileNames where name != MacOSVMBundle.diskImageName {
+            try Data(name.utf8).write(to: directory.appendingPathComponent(name))
+        }
+        try MacOSVMBundle.createDiskImage(at: directory.appendingPathComponent(MacOSVMBundle.diskImageName), sizeInBytes: 1 << 30)
+        return directory
+    }
+
+    private func temporaryURL(_ name: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID())")
+    }
+
+    private func uuids(of url: URL) throws -> (layer: UUID?, parent: UUID?) {
+        let image = try DiskImage(opening: .open(url: url, mode: .readOnly))
+        return (image.layerUUID, image.parentUUID)
+    }
+
+    @Test
+    func testALayerStacksOnTheBaseAndAnInstanceOnTheLayer() throws {
+        let base = try makeBundle()
+        let layerURL = temporaryURL("vm-layer")
+        let instanceURL = temporaryURL("vm-instance")
+        defer {
+            for url in [base, layerURL, instanceURL] { try? FileManager.default.removeItem(at: url) }
+        }
+
+        let layer = try MacOSVMBundle(url: base).layerBundle(at: layerURL)
+        _ = try layer.storageDeviceAttachment()
+        let instance = try layer.instance(at: instanceURL)
+        _ = try instance.storageDeviceAttachment()
+
+        let baseUUID = try uuids(of: base.appendingPathComponent(MacOSVMBundle.diskImageName)).layer
+        let layerUUIDs = try uuids(of: layer.layerImageURL)
+        let overlayUUIDs = try uuids(of: instance.overlayImageURL)
+        #expect(layerUUIDs.parent == baseUUID)
+        #expect(overlayUUIDs.parent == layerUUIDs.layer)
+        let link = try FileManager.default.destinationOfSymbolicLink(atPath: instance.layerImageURL.path)
+        #expect(URL(fileURLWithPath: link).resolvingSymlinksInPath() == layer.layerImageURL.resolvingSymlinksInPath())
+    }
+
+    @Test
+    func testALayerDoesNotStackOnALayer() throws {
+        let base = try makeBundle()
+        let layerURL = temporaryURL("vm-layer")
+        let secondURL = temporaryURL("vm-layer")
+        defer {
+            for url in [base, layerURL, secondURL] { try? FileManager.default.removeItem(at: url) }
+        }
+        let layer = try MacOSVMBundle(url: base).layerBundle(at: layerURL)
+
+        #expect {
+            try layer.layerBundle(at: secondURL)
+        } throws: { error in
+            "\(error)".contains("layer bundle")
+        }
+        #expect(!FileManager.default.fileExists(atPath: secondURL.path))
+    }
+
+    @Test
+    func testAnInstanceRefusesALayerOfAnotherBase() throws {
+        let base = try makeBundle()
+        let other = try makeBundle()
+        let layerURL = temporaryURL("vm-layer")
+        let instanceURL = temporaryURL("vm-instance")
+        defer {
+            for url in [base, other, layerURL, instanceURL] { try? FileManager.default.removeItem(at: url) }
+        }
+        let layer = try MacOSVMBundle(url: base).layerBundle(at: layerURL)
+        let instance = try layer.instance(at: instanceURL)
+
+        // The base was built again: the layer no longer stacks on it.
+        try FileManager.default.removeItem(at: layer.diskImageURL)
+        try FileManager.default.createSymbolicLink(at: layer.diskImageURL, withDestinationURL: other.appendingPathComponent(MacOSVMBundle.diskImageName))
+        try FileManager.default.removeItem(at: instance.diskImageURL)
+        try FileManager.default.createSymbolicLink(at: instance.diskImageURL, withDestinationURL: other.appendingPathComponent(MacOSVMBundle.diskImageName))
+
+        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try instance.storageDeviceAttachment() }
+        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try layer.instance(at: temporaryURL("vm-instance")) }
+    }
+
+    @Test
+    func testResettingAnInstanceOfALayerKeepsTheLayer() throws {
+        let base = try makeBundle()
+        let layerURL = temporaryURL("vm-layer")
+        let instanceURL = temporaryURL("vm-instance")
+        defer {
+            for url in [base, layerURL, instanceURL] { try? FileManager.default.removeItem(at: url) }
+        }
+        let layer = try MacOSVMBundle(url: base).layerBundle(at: layerURL)
+        let instance = try layer.instance(at: instanceURL)
+
+        try instance.resetOverlay(from: layer)
+
+        #expect(instance.hasLayer)
+        #expect(try uuids(of: instance.overlayImageURL).parent == uuids(of: layer.layerImageURL).layer)
+        _ = try instance.storageDeviceAttachment()
+    }
+}

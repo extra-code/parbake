@@ -127,16 +127,22 @@ public enum BundleReplacement {
 
     /// Runs `build` with the path to build at.
     ///
-    /// Without `replacing`, an existing target is refused and `build` writes to the target. With it,
-    /// `build` writes next to the target; on success the target is swapped for the new bundle, and
-    /// on failure the new bundle is removed and the target stays as it was.
+    /// Without `replacing`, an existing target is refused and `build` writes to the target, which
+    /// is removed again when `build` fails. With it, `build` writes next to the target; on success
+    /// the target is swapped for the new bundle, and on failure the new bundle is removed and the
+    /// target stays as it was.
     public static func build(at target: URL, replacing: Bool, _ build: (URL) async throws -> Void) async throws {
         let fileManager = FileManager.default
         guard replacing, fileManager.fileExists(atPath: target.path) else {
             guard !fileManager.fileExists(atPath: target.path) else {
                 throw ContainerizationError(.exists, message: "\(target.path) already exists; pass --replace to rebuild it")
             }
-            try await build(target)
+            do {
+                try await build(target)
+            } catch {
+                try? fileManager.removeItem(at: target)
+                throw error
+            }
             return
         }
         let staging = stagingURL(for: target)

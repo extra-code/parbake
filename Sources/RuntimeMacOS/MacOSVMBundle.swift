@@ -26,6 +26,9 @@ public struct MacOSVMBundle: Sendable {
     public static let agentName = "Agent"
     /// The writable top layer of an instance whose disk image is a link to an ASIF base.
     public static let overlayImageName = "Overlay.asif"
+    /// The layer of a layer bundle, between the base disk image and an instance's overlay, for
+    /// example one with Xcode. Writable while the layer bundle is built, read-only under an overlay.
+    public static let layerImageName = "Layer.asif"
 
     static let fileNames = [diskImageName, auxiliaryStorageName, hardwareModelName, machineIdentifierName]
 
@@ -59,6 +62,11 @@ public struct MacOSVMBundle: Sendable {
     public var hardwareModelURL: URL { url.appendingPathComponent(Self.hardwareModelName) }
     public var machineIdentifierURL: URL { url.appendingPathComponent(Self.machineIdentifierName) }
     public var overlayImageURL: URL { url.appendingPathComponent(Self.overlayImageName) }
+    public var layerImageURL: URL { url.appendingPathComponent(Self.layerImageName) }
+
+    /// Whether this is a layer bundle, or an instance of one.
+    public var hasLayer: Bool { FileManager.default.fileExists(atPath: layerImageURL.path) }
+    private var hasOverlay: Bool { FileManager.default.fileExists(atPath: overlayImageURL.path) }
     public var provisionedURL: URL { url.appendingPathComponent(Self.provisionedName) }
     public var guestKeyURL: URL { url.appendingPathComponent(Self.guestKeyName) }
     public var agentURL: URL { url.appendingPathComponent(Self.agentName) }
@@ -106,15 +114,22 @@ public struct MacOSVMBundle: Sendable {
     }
 
     /// The storage the guest boots from: the disk image, or the disk image read-only with the
-    /// overlay stacked on it when the bundle has one.
+    /// layer and the overlay stacked on it when the bundle has them. Only the top layer is
+    /// writable: the overlay of an instance, or the layer of a layer bundle.
     public func storageDeviceAttachment() throws -> VZDiskImageStorageDeviceAttachment {
-        guard FileManager.default.fileExists(atPath: overlayImageURL.path) else {
+        guard hasOverlay || hasLayer else {
             return try VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
         }
         do {
-            let base = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
-            let overlay = try DiskImage(opening: .open(url: overlayImageURL))
-            return try VZDiskImageStorageDeviceAttachment(diskImage: try base.appending(overlay))
+            var stack = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
+            if hasLayer {
+                let layer = try DiskImage(opening: .open(url: layerImageURL, mode: hasOverlay ? .readOnly : .readWrite))
+                stack = try stack.appending(layer)
+            }
+            if hasOverlay {
+                stack = try stack.appending(try DiskImage(opening: .open(url: overlayImageURL)))
+            }
+            return try VZDiskImageStorageDeviceAttachment(diskImage: stack)
         } catch let error as IncompatibleStackingError {
             throw IncompatibleOverlayError(bundle: url, base: diskImageURL.resolvingSymlinksInPath(), reason: error.localizedDescription)
         } catch {
@@ -164,8 +179,45 @@ public struct MacOSVMBundle: Sendable {
     /// model are APFS clones, or copies on another volume, and so are the provisioning files and the
     /// agent version when the bundle has them. The machine identifier is new, so every instance has
     /// its own serial number and platform UUID. A bundle with a raw disk image is refused.
+    ///
+    /// An instance of a layer bundle links its layer too, so the overlay stacks on base and layer.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
         try checkDiskImageIsASIF()
+        try copyBundleFiles(to: destination)
+        try linkBaseAndCreateOverlay(in: destination)
+        return try MacOSVMBundle(url: destination)
+    }
+
+    /// Creates a layer bundle in `destination` on this bundle; this bundle stays unchanged.
+    ///
+    /// The layer bundle links this bundle's disk image like an instance, and writes into a new
+    /// ASIF layer bound to the image's layer UUID. Booted on its own, the layer bundle writes to
+    /// its layer; its instances read the layer and write to their overlays. A layer bundle cannot
+    /// be the base of another one: Apple advises against deep stacks, and base, layer and overlay
+    /// are three levels.
+    public func layerBundle(at destination: URL) throws -> MacOSVMBundle {
+        try checkDiskImageIsASIF()
+        guard !hasLayer else {
+            throw ContainerizationError(.unsupported, message: "\(url.path) is a layer bundle; a layer stacks on a base bundle only")
+        }
+        guard !hasOverlay else {
+            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
+        }
+        try copyBundleFiles(to: destination)
+        let diskImageLink = try linkDiskImage(in: destination)
+        let layerURL = destination.appendingPathComponent(Self.layerImageName)
+        do {
+            let base = try DiskImage(opening: .open(url: diskImageLink, mode: .readOnly))
+            _ = try base.appending(.asifLayer(url: layerURL, type: .overlay))
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to create \(layerURL.path)", cause: error)
+        }
+        return try MacOSVMBundle(url: destination)
+    }
+
+    /// Clones the auxiliary storage, the hardware model and the provisioning files into
+    /// `destination`, and writes a new machine identifier there.
+    private func copyBundleFiles(to destination: URL) throws {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try Self.cloneFiles([Self.auxiliaryStorageName, Self.hardwareModelName], from: url, to: destination)
         let provisioningFiles = [Self.provisionedName, Self.guestKeyName, Self.agentName].filter {
@@ -173,8 +225,6 @@ public struct MacOSVMBundle: Sendable {
         }
         try Self.cloneFiles(provisioningFiles, from: url, to: destination)
         try VZMacMachineIdentifier().dataRepresentation.write(to: destination.appendingPathComponent(Self.machineIdentifierName))
-        try linkBaseAndCreateOverlay(in: destination)
-        return try MacOSVMBundle(url: destination)
     }
 
     /// Discards this instance's overlay and starts it over on `source`: the disk image link, the
@@ -183,7 +233,7 @@ public struct MacOSVMBundle: Sendable {
     /// The guest's writes since the instance was created are lost.
     public func resetOverlay(from source: MacOSVMBundle) throws {
         try source.checkDiskImageIsASIF()
-        for name in [Self.overlayImageName, Self.diskImageName, Self.auxiliaryStorageName] {
+        for name in [Self.overlayImageName, Self.layerImageName, Self.diskImageName, Self.auxiliaryStorageName] {
             let file = url.appendingPathComponent(name)
             if (try? FileManager.default.destinationOfSymbolicLink(atPath: file.path)) != nil || FileManager.default.fileExists(atPath: file.path) {
                 try FileManager.default.removeItem(at: file)
@@ -193,14 +243,32 @@ public struct MacOSVMBundle: Sendable {
         try source.linkBaseAndCreateOverlay(in: url)
     }
 
-    /// Links this bundle's disk image as `Disk.img` in `destination` and creates an ASIF overlay on it there.
-    private func linkBaseAndCreateOverlay(in destination: URL) throws {
+    /// Links this bundle's disk image as `Disk.img` in `destination` and returns the link.
+    private func linkDiskImage(in destination: URL) throws -> URL {
         let diskImageLink = destination.appendingPathComponent(Self.diskImageName)
         try FileManager.default.createSymbolicLink(at: diskImageLink, withDestinationURL: diskImageURL.resolvingSymlinksInPath())
+        return diskImageLink
+    }
+
+    /// Links this bundle's disk image, and its layer when it has one, in `destination` and
+    /// creates an ASIF overlay on them there.
+    private func linkBaseAndCreateOverlay(in destination: URL) throws {
+        let diskImageLink = try linkDiskImage(in: destination)
+        var layerLink: URL?
+        if hasLayer {
+            let link = destination.appendingPathComponent(Self.layerImageName)
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: layerImageURL.resolvingSymlinksInPath())
+            layerLink = link
+        }
         let overlayURL = destination.appendingPathComponent(Self.overlayImageName)
         do {
-            let base = try DiskImage(opening: .open(url: diskImageLink, mode: .readOnly))
-            _ = try base.appending(.asifLayer(url: overlayURL, type: .overlay))
+            var stack = try DiskImage(opening: .open(url: diskImageLink, mode: .readOnly))
+            if let layerLink {
+                stack = try stack.appending(try DiskImage(opening: .open(url: layerLink, mode: .readOnly)))
+            }
+            _ = try stack.appending(.asifLayer(url: overlayURL, type: .overlay))
+        } catch let error as IncompatibleStackingError {
+            throw IncompatibleOverlayError(bundle: url, base: diskImageURL.resolvingSymlinksInPath(), reason: error.localizedDescription)
         } catch {
             throw ContainerizationError(.internalError, message: "failed to create \(overlayURL.path)", cause: error)
         }

@@ -324,7 +324,12 @@ private final class AgentProcess: @unchecked Sendable {
         for listener in listeners {
             connections.append(try await listener?.accept(timeout: timeout))
         }
-        if let input = stdio[0], let connection = connections[0] {
+        if let input = stdio[0], let connection = connections[0], Self.isRegularFile(input) {
+            // A regular file never becomes readable at its end, so a readability handler would
+            // never close the connection and the process would wait for more input forever.
+            lock.withLock { stdinConnection = connection }
+            copyFile(from: input, to: connection)
+        } else if let input = stdio[0], let connection = connections[0] {
             lock.withLock { stdinConnection = connection }
             input.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
@@ -347,6 +352,25 @@ private final class AgentProcess: @unchecked Sendable {
             copies.notify(queue: .global()) { cc.resume() }
         }
         closeStdin()
+    }
+
+    private static func isRegularFile(_ handle: FileHandle) -> Bool {
+        var status = stat()
+        return fstat(handle.fileDescriptor, &status) == 0 && (status.st_mode & S_IFMT) == S_IFREG
+    }
+
+    /// Copies the regular file `source` to the agent's stdin connection on its own thread, then
+    /// closes the connection so the process reads the end of its input.
+    private func copyFile(from source: FileHandle, to connection: FileHandle) {
+        let thread = Thread { [weak self] in
+            while let data = try? source.read(upToCount: 64 * 1024), !data.isEmpty {
+                guard (try? connection.write(contentsOf: data)) != nil else {
+                    break
+                }
+            }
+            self?.closeStdin()
+        }
+        thread.start()
     }
 
     private func closeStdin() {

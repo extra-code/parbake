@@ -40,4 +40,10 @@ let server = GRPCServer(
 let front = try VsockFront(port: UInt32(port), backend: socketPath)
 front.start()
 log("serving SandboxContext on vsock port \(port) for the host, through \(socketPath)")
-try await server.serve()
+try await withThrowingDiscardingTaskGroup { group in
+    group.addTask { try await server.serve() }
+    // The socket is created under umask 077; once it is bound, processes the agent starts get the
+    // umask of a login session, else every file a job writes is readable by its owner alone.
+    _ = try await server.listeningAddress
+    umask(0o022)
+}

@@ -90,9 +90,17 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   logged-in session has and a LaunchDaemon has not.
 - `create` runs the other `parbake` commands in order: `install`, `provision` and `setup`,
   plus `agent install`, which installs or updates the guest agent in a provisioned bundle, and
-  `agent-probe`, which checks a development build of the agent against a provisioned bundle.
+  `agent-probe`, which checks a development build of the agent against a provisioned bundle, and
+  `state-probe`, which measures a start from a saved guest state against a cold boot.
   `agent install` writes to the bundle's disk image: remove containers made from the bundle first.
   `provision` runs only on the first boot after `install`, and writes `Provisioned` into the bundle.
+- `parbake layer --base ~/VM.bundle --bundle ~/Xcode.bundle --script install.sh` creates a layer
+  bundle for software many containers need, such as Xcode. It links the base's disk image, boots
+  with a layer of its own on top, runs the script as root through the guest agent and shuts the
+  guest down. A container from the layer bundle reads base and layer and writes only to its
+  overlay. The base stays unchanged, and a failed script leaves no layer bundle behind. A layer
+  bundle cannot be the base of another layer. Rebuilding the base makes its layers unusable, as it
+  does for overlays.
 
 ## Build and install
 

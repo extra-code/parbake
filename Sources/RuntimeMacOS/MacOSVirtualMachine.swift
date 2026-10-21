@@ -276,6 +276,45 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Pauses the guest and writes its memory and device state to `url`; the guest stays paused.
+    public func saveState(to url: URL) async throws {
+        try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
+            queue.async {
+                self.virtualMachine.pause { result in
+                    if case .failure(let error) = result {
+                        cc.resume(throwing: error)
+                        return
+                    }
+                    self.virtualMachine.saveMachineStateTo(url: url) { error in
+                        if let error {
+                            cc.resume(throwing: error)
+                        } else {
+                            cc.resume()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Restores the state saved at `url` into this virtual machine instead of booting it, and
+    /// resumes the guest. The configuration must match the one the state was saved with.
+    public func restoreState(from url: URL) async throws {
+        try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
+            queue.async {
+                self.virtualMachine.restoreMachineStateFrom(url: url) { error in
+                    if let error {
+                        cc.resume(throwing: error)
+                        return
+                    }
+                    self.virtualMachine.resume { result in
+                        cc.resume(with: result)
+                    }
+                }
+            }
+        }
+    }
+
     /// Asks the guest to shut down, like a press of the power button.
     public func requestStop() async throws {
         try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
@@ -344,7 +383,6 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
             }
         }
     }
-
 
     /// The exit of the guest, or nil while it runs.
     public var currentExit: GuestExit? {

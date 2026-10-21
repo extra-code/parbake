@@ -138,6 +138,21 @@ struct BundleReplacementTests {
     }
 
     @Test
+    func testAFailedFirstBuildLeavesNothingBehind() async throws {
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-replace-\(UUID())/VM.bundle")
+        defer { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()) }
+
+        await #expect(throws: BuildFailed.self) {
+            try await BundleReplacement.build(at: target, replacing: false) { path in
+                try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+                throw BuildFailed()
+            }
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: target.path))
+    }
+
+    @Test
     func testASuccessfulBuildTakesThePlaceOfTheBundle() async throws {
         let target = try makeTarget()
         defer { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()) }
