@@ -130,13 +130,22 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     }
 
     /// Boots the guest.
+    ///
+    /// Virtualization.framework runs at most two macOS guests per host; a start beyond that fails
+    /// with an error that says so.
     public func start() async throws {
-        try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
-            queue.async {
-                self.virtualMachine.start { result in
-                    cc.resume(with: result)
+        do {
+            try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
+                queue.async {
+                    self.virtualMachine.start { result in
+                        cc.resume(with: result)
+                    }
                 }
             }
+        } catch let error as VZError where error.code == .virtualMachineLimitExceeded {
+            throw ContainerizationError(
+                .unsupported, message: "this host already runs the two macOS guests Virtualization.framework allows; stop one first",
+                cause: error)
         }
     }
 

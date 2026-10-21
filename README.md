@@ -129,9 +129,15 @@ container run -d \
 
 ## Limitations
 
-- At most two macOS guests run at the same time per host.
+- At most two macOS guests run at the same time per host. Virtualization.framework refuses a third,
+  and the start fails with a message that says so. Scheduling within the limit is the caller's job.
 - `exec` needs the guest agent in the guest. It runs as the provisioned account in its login session,
-  with its keychain; `--user root` runs as root. `exec -t` is not supported yet.
+  with its keychain and its own `TMPDIR`; `--user root` runs as root. `exec -t` runs on a terminal.
+- A job writes to the account's home and `TMPDIR`; the system volume is read-only. Both live in the
+  container's overlay and go with the container.
+- When the guest stops during an `exec`, the exec fails with an error naming the guest's stop instead
+  of an exit code, and the container is `stopped`. A caller tells a guest failure from a job failure
+  by the container state, see [ADR 0008](docs/adr/adr_0008_what_a_ci_executor_can_rely_on.md).
 - Signals that the CLI forwards to an `exec` process fail in apple/container itself
   ([apple/container#1941](https://github.com/apple/container/issues/1941)).
 - `cp`, `stats`, `dial`, `export` and `clean` return "unsupported".

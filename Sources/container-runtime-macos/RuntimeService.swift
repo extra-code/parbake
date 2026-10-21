@@ -38,6 +38,8 @@ actor RuntimeService {
     static let vmDirectoryName = "vm"
     /// The least time a guest gets to finish a shutdown it accepted over SSH.
     static let minimumShutdownTimeout: Duration = .seconds(60)
+    /// How long a wait whose process was lost waits for the guest to report that it stopped.
+    static let guestLossTimeout: Duration = .seconds(5)
 
     enum State {
         case created
@@ -320,12 +322,27 @@ actor RuntimeService {
         if id == configuration.id {
             exit = await virtualMachine.wait()
         } else {
-            exit = try await runningAgent().wait(id: id)
+            exit = try await processExit(id: id, virtualMachine: virtualMachine)
         }
         let reply = message.reply()
         reply.set(key: RuntimeKeys.exitCode.rawValue, value: Int64(exit.exitCode))
         reply.set(key: RuntimeKeys.exitedAt.rawValue, value: exit.exitedAt)
         return reply
+    }
+
+    /// Returns the exit of a process run through the agent. When the guest stopped under the
+    /// process, the wait fails with the guest's stop, so the caller cannot take it for the
+    /// process's own exit code.
+    private func processExit(id: String, virtualMachine: MacOSVirtualMachine) async throws -> GuestExit {
+        do {
+            return try await runningAgent().wait(id: id)
+        } catch let error as GuestAgent.ProcessLost {
+            guard let guest = await virtualMachine.wait(timeout: Self.guestLossTimeout) else {
+                throw error
+            }
+            throw ContainerizationError(
+                .interrupted, message: "the macOS guest stopped with exit code \(guest.exitCode) while process \(id) ran; the process has no exit code")
+        }
     }
 
     @Sendable

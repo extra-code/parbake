@@ -93,7 +93,8 @@ and records the process; `StartProcess(id)` spawns it and returns its PID.
   the account starts itself. When the account has no GUI session, `CreateProcess` fails with
   `FAILED_PRECONDITION` and says so.
 - **Environment defaults:** `HOME`, `USER`, `LOGNAME`, `SHELL` from the account record, `PATH`
-  `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`; `process.env` overrides them.
+  `/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin`, `TMPDIR` the account's own temporary directory;
+  `process.env` overrides them.
 - Process IDs are unique per agent run; a second `CreateProcess` with a known ID fails with
   `ALREADY_EXISTS`.
 - Every process starts in a process group of its own (with a terminal: a session of its own), with

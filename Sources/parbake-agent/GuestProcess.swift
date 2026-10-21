@@ -296,6 +296,11 @@ struct Launch {
             "SHELL": account.shell,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin",
         ]
+        if let temporary = TemporaryDirectories.shared.directory(for: account) {
+            // Tools on macOS expect the account's own temporary directory; launchd sets it only
+            // for a session, not for the agent's children.
+            environment["TMPDIR"] = temporary
+        }
         if process.terminal {
             // The same default containerization gives a Linux process with a terminal.
             environment["TERM"] = "xterm"
@@ -393,6 +398,65 @@ struct Launch {
 }
 
 /// The guest account a process runs as.
+/// The temporary directory of each account, `/var/folders/…/T/`, looked up once per account.
+final class TemporaryDirectories: @unchecked Sendable {
+    static let shared = TemporaryDirectories()
+
+    private let lock = NSLock()
+    private var directories: [uid_t: String] = [:]
+
+    /// The account's directory: the agent's own from `confstr`, another account's from `getconf`
+    /// run as that account, which only a root agent can do. Nil when the lookup fails.
+    func directory(for account: Account) -> String? {
+        if let known = lock.withLock({ directories[account.uid] }) {
+            return known
+        }
+        let found: String?
+        if account.uid == getuid() {
+            found = Self.ownDirectory()
+        } else if getuid() == 0 {
+            found = Self.directory(ofOther: account)
+        } else {
+            found = nil
+        }
+        if let found {
+            lock.withLock { directories[account.uid] = found }
+        }
+        return found
+    }
+
+    private static func ownDirectory() -> String? {
+        let size = confstr(_CS_DARWIN_USER_TEMP_DIR, nil, 0)
+        guard size > 0 else {
+            return nil
+        }
+        var buffer = [CChar](repeating: 0, count: size)
+        guard confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, size) > 0 else {
+            return nil
+        }
+        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    private static func directory(ofOther account: Account) -> String? {
+        let getconf = Process()
+        getconf.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        getconf.arguments = ["-u", account.name, "--", "/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"]
+        let output = Pipe()
+        getconf.standardOutput = output
+        getconf.standardError = FileHandle.nullDevice
+        guard (try? getconf.run()) != nil else {
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        getconf.waitUntilExit()
+        let path = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard getconf.terminationStatus == 0, path.hasPrefix("/") else {
+            return nil
+        }
+        return path
+    }
+}
+
 struct Account {
     let uid: uid_t
     let name: String
