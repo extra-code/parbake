@@ -25,6 +25,8 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.36.0"),
+        // parbake reads bundle configurations from TOML files.
+        .package(url: "https://github.com/dduan/TOMLDecoder.git", from: "0.4.5"),
     ],
     targets: [
         .executableTarget(
@@ -53,6 +55,7 @@ let package = Package(
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "TOMLDecoder", package: "TOMLDecoder"),
             ]
         ),
         .executableTarget(
@@ -78,6 +81,10 @@ let package = Package(
         .testTarget(
             name: "RuntimeMacOSTests",
             dependencies: ["RuntimeMacOS"]
+        ),
+        .testTarget(
+            name: "ParbakeTests",
+            dependencies: ["parbake"]
         ),
     ]
 )

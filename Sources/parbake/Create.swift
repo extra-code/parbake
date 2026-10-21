@@ -23,8 +23,17 @@ extension ParbakeTool {
                 PARBAKE_HOME moves the default bundle and the cache to another directory, for example \
                 on an external SSD: the bundle defaults to $PARBAKE_HOME/VM.bundle and the cache to \
                 $PARBAKE_HOME/cache.
+
+                --config reads the bundle from a TOML file: bundle, restore-image, disk-size, cpus and \
+                memory at the top, [account] with username, full-name, authorized-keys, keychain and \
+                keychain-service, and [guest] with tidy, agent, sudo (commands allowed without a \
+                password) and scripts (run as root through the agent after provisioning). Options on \
+                the command line take precedence over the file.
                 """
         )
+
+        @Option(name: .long, help: "TOML file that describes the bundle")
+        var config: String?
 
         @Option(name: .long, help: "Bundle to create (default: $PARBAKE_HOME/VM.bundle, else ~/VM.bundle)")
         var bundle: String?
@@ -41,14 +50,14 @@ extension ParbakeTool {
         @Option(name: .long, help: "Download directory for restore images (default: $PARBAKE_HOME/cache, else ~/Library/Caches/parbake)")
         var cacheDir: String?
 
-        @Option(name: .long, help: "Size of the sparse disk image in GiB")
-        var diskSize: UInt64 = 100
+        @Option(name: .long, help: "Size of the sparse disk image in GiB (default: 100)")
+        var diskSize: UInt64?
 
-        @Option(name: .long, help: "Number of CPUs for installation and first boot")
-        var cpus: Int = 4
+        @Option(name: .long, help: "Number of CPUs for installation and first boot (default: 4)")
+        var cpus: Int?
 
-        @Option(name: .long, help: "Memory in GiB for installation and first boot")
-        var memory: UInt64 = 8
+        @Option(name: .long, help: "Memory in GiB for installation and first boot (default: 8)")
+        var memory: UInt64?
 
         @Option(name: .long, help: "Create this account on the first boot instead of opening the Setup Assistant")
         var username: String?
@@ -56,8 +65,14 @@ extension ParbakeTool {
         @Option(name: .long, help: "Full name of that account (default: the username)")
         var fullName: String?
 
-        @Option(name: .long, help: "Public key file to add to that account's authorized_keys")
-        var authorizedKey: String?
+        @Option(name: .long, help: "Public key file to add to that account's authorized_keys; repeatable")
+        var authorizedKey: [String] = []
+
+        @Option(name: .long, help: "Command that account may run with sudo without a password; repeatable")
+        var sudo: [String] = []
+
+        @Option(name: .long, help: "Shell script to run as root through the agent after provisioning; repeatable")
+        var script: [String] = []
 
         @Flag(name: .long, help: "Take that account's password from the login keychain, generating one when it has none")
         var keychain = false
@@ -79,6 +94,50 @@ extension ParbakeTool {
 
         func run() async throws {
             setvbuf(stdout, nil, _IOLBF, 0)
+            var resolved = self
+            if let config {
+                try resolved.apply(BundleConfiguration.load(from: URL(fileURLWithPath: config)))
+            }
+            try resolved.validateScripts()
+            try await resolved.create()
+        }
+
+        /// Takes every value the command line left open from `configuration`. Flags that are off on
+        /// the command line take the file's value; lists from the command line replace the file's.
+        mutating func apply(_ configuration: BundleConfiguration) {
+            bundle = bundle ?? configuration.bundle
+            restoreImage = restoreImage ?? configuration.restoreImage
+            diskSize = diskSize ?? configuration.diskSize
+            cpus = cpus ?? configuration.cpus
+            memory = memory ?? configuration.memory
+            if let account = configuration.account {
+                username = username ?? account.username
+                fullName = fullName ?? account.fullName
+                authorizedKey = authorizedKey.isEmpty ? account.authorizedKeys ?? [] : authorizedKey
+                keychain = keychain || account.keychain == true
+                if keychainService == GuestCredentials.defaultService, let service = account.keychainService {
+                    keychainService = service
+                }
+            }
+            if let guest = configuration.guest {
+                tidy = tidy || guest.tidy == true
+                noAgent = noAgent || guest.agent == false
+                sudo = sudo.isEmpty ? guest.sudo ?? [] : sudo
+                script = script.isEmpty ? guest.scripts ?? [] : script
+            }
+        }
+
+        /// Scripts run through the agent of the provisioned account, so they need both.
+        func validateScripts() throws {
+            guard !script.isEmpty else {
+                return
+            }
+            guard username != nil, !noAgent else {
+                throw ValidationError("scripts run through the guest agent after provisioning; they need --username and the agent")
+            }
+        }
+
+        private func create() async throws {
             let home = ParbakeHome()
             let target = URL(fileURLWithPath: bundle ?? home.defaultBundle.path)
             let replacing = replace && FileManager.default.fileExists(atPath: target.path)
@@ -132,21 +191,28 @@ extension ParbakeTool {
         private func build(at path: URL, from image: URL) async throws {
             print("==> Installing macOS into \(path.path)")
             let install = try Install.parse([
-                "--bundle", path.path, "--restore-image", image.path, "--disk-size", "\(diskSize)", "--cpus", "\(cpus)", "--memory", "\(memory)",
+                "--bundle", path.path, "--restore-image", image.path, "--disk-size", "\(diskSize ?? 100)", "--cpus", "\(cpus ?? 4)",
+                "--memory", "\(memory ?? 8)",
             ])
             try await install.run()
 
             if let username {
                 print("==> Provisioning the account \(username) on the first boot")
-                var arguments = ["--bundle", path.path, "--username", username, "--cpus", "\(cpus)", "--memory", "\(memory)"]
+                var arguments = ["--bundle", path.path, "--username", username, "--cpus", "\(cpus ?? 4)", "--memory", "\(memory ?? 8)"]
                 arguments += fullName.map { ["--full-name", $0] } ?? []
-                arguments += authorizedKey.map { ["--authorized-key", $0] } ?? []
+                arguments += authorizedKey.flatMap { ["--authorized-key", $0] }
+                arguments += sudo.flatMap { ["--sudo", $0] }
                 arguments += keychain ? ["--keychain", "--keychain-service", keychainService] : []
                 arguments += tidy ? ["--tidy"] : []
                 arguments += agent.map { ["--agent", $0] } ?? []
                 arguments += noAgent ? ["--no-agent"] : []
                 let provision = try Provision.parse(arguments)
                 try await provision.run()
+                if !script.isEmpty {
+                    print("==> Running \(script.count) script(s) in the guest")
+                    try await GuestScript.run(
+                        script.map { URL(fileURLWithPath: $0) }, in: try MacOSVMBundle(url: path), cpus: cpus ?? 4, memory: memory ?? 8, timeout: 300)
+                }
             } else if !noSetup {
                 print(
                     """
@@ -156,7 +222,7 @@ extension ParbakeTool {
                       2. Optional: System Settings > General > Sharing > Remote Login, for SSH access.
                       3. Shut down the guest from its Apple menu; the window closes and parbake continues.
                     """)
-                let setup = try Setup.parse(["--bundle", path.path, "--cpus", "\(cpus)", "--memory", "\(memory)"])
+                let setup = try Setup.parse(["--bundle", path.path, "--cpus", "\(cpus ?? 4)", "--memory", "\(memory ?? 8)"])
                 try await setup.run()
             }
         }

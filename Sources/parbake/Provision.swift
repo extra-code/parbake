@@ -13,8 +13,8 @@ extension ParbakeTool {
             discussion: """
                 Boots the bundle once, headless, with a user account, automatic login and Remote Login, \
                 and waits until the account answers over SSH. In one SSH session it then adds the guest \
-                key that the runtime uses (and a public key from --authorized-key), allows the account to \
-                run /sbin/shutdown without a password, installs the guest agent as a LaunchDaemon \
+                key that the runtime uses (and the public keys from --authorized-key), allows the account to \
+                run /sbin/shutdown and the --sudo commands without a password, installs the guest agent as a LaunchDaemon \
                 (unless --no-agent), and optionally turns Spotlight off and empties the caches (--tidy). \
                 Once the agent answers over vsock, it records the agent's version in the bundle and \
                 shuts the guest down through the agent. Run it on the first boot after `install`: the \
@@ -35,8 +35,11 @@ extension ParbakeTool {
         @Option(name: .long, help: "Full name of the account (default: the username)")
         var fullName: String?
 
-        @Option(name: .long, help: "Public key file to add to the account's authorized_keys")
-        var authorizedKey: String?
+        @Option(name: .long, help: "Public key file to add to the account's authorized_keys; repeatable")
+        var authorizedKey: [String] = []
+
+        @Option(name: .long, help: "Command the account may run with sudo without a password, besides /sbin/shutdown; repeatable")
+        var sudo: [String] = []
 
         @Flag(name: .long, help: "Take the password from the login keychain, generating and storing one when it has none")
         var keychain = false
@@ -70,7 +73,10 @@ extension ParbakeTool {
             guard !FileManager.default.fileExists(atPath: vmBundle.provisionedURL.path) else {
                 throw ValidationError("\(bundle) is already provisioned")
             }
-            var publicKeys = try authorizedKey.map { [try Self.publicKey(at: URL(fileURLWithPath: $0))] } ?? []
+            var publicKeys = try authorizedKey.map { try Self.publicKey(at: URL(fileURLWithPath: $0)) }
+            for command in sudo {
+                try GuestPreparation.checkSudoCommand(command)
+            }
             let agentBinary = noAgent ? nil : try AgentSetup.binary(at: agent)
             let password =
                 try keychain
@@ -100,13 +106,15 @@ extension ParbakeTool {
                     try AgentSetup.stage(agentBinary, shell: ssh, address: address)
                 }
                 let script = GuestPreparation.script(
-                    username: username, password: password, publicKeys: publicKeys, tidy: tidy, installAgent: agentBinary != nil)
+                    username: username, password: password, publicKeys: publicKeys, tidy: tidy, installAgent: agentBinary != nil,
+                    sudoCommands: sudo)
                 let result = ssh.run("/bin/bash -s", on: address, input: script)
                 guard result.output.contains(GuestPreparation.preparedMarker) else {
                     throw ValidationError("preparing the account failed (ssh exit status \(result.status))")
                 }
                 print(
                     "Added \(publicKeys.count) public key(s), allowed \(username) to shut the guest down"
+                        + (sudo.isEmpty ? "" : " and to run \(sudo.count) more command(s) with sudo")
                         + (agentBinary != nil ? ", installed the guest agent" : "")
                         + (tidy ? ", turned Spotlight off and emptied the caches" : ""))
                 try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)

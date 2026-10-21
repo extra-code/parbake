@@ -60,6 +60,26 @@ scripts/dev-env.sh down            # stop the development services, restart the 
   Containers made from the old bundle no longer stack on the new disk image: remove them, or let
   `--label runtime-macos.on-incompatible-overlay=discard` start them over. `parbake create --help`
   lists the options.
+- `parbake create --config parbake.toml` reads the bundle from a file, so an image pipeline is
+  declarative. Paths in the file are relative to it, an unknown key is an error, and options on the
+  command line take precedence. The scripts run as root through the guest agent after
+  provisioning, and a failing script fails the build.
+
+  ```toml
+  bundle = "/Volumes/external-disk/parbake/VM.bundle"
+  disk-size = 100
+
+  [account]
+  username = "ci"
+  authorized-keys = ["~/.ssh/id_ed25519.pub"]
+  keychain = true
+
+  [guest]
+  tidy = true
+  sudo = ["/usr/sbin/softwareupdate"]   # allowed without a password, besides /sbin/shutdown
+  scripts = ["setup.sh"]
+  ```
+
 - Bundles and the restore image cache take about 30 GB each. To keep them off the internal disk, set
   `PARBAKE_HOME` to a directory on an external SSD, for example
   `PARBAKE_HOME=/Volumes/external-disk/parbake parbake create …`: the bundle then defaults to

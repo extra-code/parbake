@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ArgumentParser
-import ContainerizationOCI
 import Foundation
 import RuntimeMacOS
 
@@ -53,52 +52,14 @@ extension ParbakeTool {
                 throw ValidationError("\(baseBundle.url.path) has no guest agent; run parbake agent install first")
             }
             let scriptURL = URL(fileURLWithPath: script)
-            guard FileManager.default.isReadableFile(atPath: scriptURL.path) else {
-                throw ValidationError("cannot read the script \(scriptURL.path)")
-            }
             let target = URL(fileURLWithPath: bundle)
             try await BundleReplacement.build(at: target, replacing: replace) { path in
                 print("==> Creating a layer on \(baseBundle.url.path) in \(path.path)")
                 let layer = try baseBundle.layerBundle(at: path)
-                try await runScript(scriptURL, in: layer)
+                try await GuestScript.run([scriptURL], in: layer, cpus: cpus, memory: memory, timeout: timeout)
             }
             print("==> Created \(target.path)")
             print("Run a container from it with --label runtime-macos.bundle=\(target.path)")
-        }
-
-        private func runScript(_ scriptURL: URL, in layer: MacOSVMBundle) async throws {
-            let virtualMachine = try MacOSVirtualMachine(bundle: layer, cpus: cpus, memoryInBytes: memory << 30)
-            print("==> Booting the layer bundle")
-            try await virtualMachine.start()
-            let agent = GuestAgent(virtualMachine: virtualMachine)
-            do {
-                _ = try await agent.waitUntilReady(timeout: .seconds(timeout))
-                print("==> Running \(scriptURL.lastPathComponent) as root")
-                let id = "layer-\(UUID().uuidString)"
-                let process = ContainerizationOCI.Process(args: ["/bin/bash", "-s"], cwd: "/", user: User(username: "root"))
-                let input = try FileHandle(forReadingFrom: scriptURL)
-                // The agent closes the output handles when the script's output ends; duplicates
-                // keep parbake's own standard output and error open for what follows.
-                let output = FileHandle(fileDescriptor: dup(STDOUT_FILENO), closeOnDealloc: true)
-                let errorOutput = FileHandle(fileDescriptor: dup(STDERR_FILENO), closeOnDealloc: true)
-                try await agent.createProcess(id: id, process: process, stdio: [input, output, errorOutput])
-                _ = try await agent.startProcess(id: id)
-                let exit = try await agent.wait(id: id)
-                guard exit.exitCode == 0 else {
-                    throw ValidationError("\(scriptURL.lastPathComponent) exited with \(exit.exitCode); the layer was not kept")
-                }
-                print("==> Shutting the guest down")
-                let accepted = await agent.shutDown(provisionedUsername: layer.provisionedUsername, timeout: .seconds(15)) { print($0) }
-                await agent.close()
-                if !accepted {
-                    try? await virtualMachine.requestStop()
-                }
-            } catch {
-                await agent.close()
-                try? await virtualMachine.forceStop()
-                throw error
-            }
-            try await AgentSetup.waitForStop(virtualMachine)
         }
     }
 }
