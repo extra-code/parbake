@@ -12,12 +12,13 @@ public enum GuestPreparation {
     /// The commands the provisioned account runs with sudo and without a password.
     public static let passwordlessCommands = ["/sbin/shutdown"]
 
-    /// Refuses a sudo command that is not an absolute path, or that holds a character that would
-    /// end the sudoers entry or the script's quoting.
+    /// Refuses a sudo command that is not an absolute command path: no arguments, no wildcards,
+    /// only the characters A-Z a-z 0-9 . _ / + -.
     public static func checkSudoCommand(_ command: String) throws {
-        guard command.hasPrefix("/"), command.rangeOfCharacter(from: CharacterSet(charactersIn: ",'\\\n\r")) == nil else {
+        guard SudoCommand(rawValue: command) != nil else {
             throw ContainerizationError(
-                .invalidArgument, message: "sudo command \(command) must be an absolute path without a comma, quote, backslash or line break")
+                .invalidArgument,
+                message: "sudo command \(command) must be an absolute command path with no arguments or wildcards, using only the characters A-Z a-z 0-9 . _ / + -")
         }
     }
 
@@ -28,11 +29,21 @@ public enum GuestPreparation {
     /// With `installAgent`, it also installs the agent staged at `GuestAgentInstallation.stagedPath`
     /// and leaves the guest running, so the host can check the agent before it shuts the guest down.
     /// The password reaches sudo through the script on ssh's standard input.
-    /// `sudoCommands` are allowed without a password next to `passwordlessCommands`; check each
-    /// with `checkSudoCommand` first.
+    /// `sudoCommands` are allowed without a password next to `passwordlessCommands`. Throws when the username, the password, a key
+    /// or a sudo command is not safe to embed.
     public static func script(
         username: String, password: String, publicKeys: [String], tidy: Bool, installAgent: Bool = false, sudoCommands: [String] = []
-    ) -> String {
+    ) throws -> String {
+        guard GuestUsername(rawValue: username) != nil else {
+            throw ContainerizationError(.invalidArgument, message: "username \(username) must be \(GuestUsername.rule)")
+        }
+        try ScriptInput.check(password, field: "password")
+        for key in publicKeys {
+            try ScriptInput.check(key, field: "public key")
+        }
+        for command in sudoCommands {
+            try checkSudoCommand(command)
+        }
         let commands = passwordlessCommands + sudoCommands
         let userTidy = tidy ? "rm -rf \"$HOME\"/Library/Caches/* 2>/dev/null || true\n" : ""
         let rootTidy = tidy ? "mdutil -a -i off >/dev/null\nmdutil -a -E >/dev/null 2>&1 || true\nrm -rf /Library/Caches/* 2>/dev/null || true\n" : ""

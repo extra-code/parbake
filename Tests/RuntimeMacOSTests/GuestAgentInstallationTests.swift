@@ -24,7 +24,7 @@ struct GuestAgentInstallationTests {
 
     @Test
     func testTheInstallationScriptAndItsRootCommandsParse() throws {
-        #expect(try status(of: "/bin/bash", ["-n"], input: GuestAgentInstallation.script(password: "pa$$ 'word")) == 0)
+        #expect(try status(of: "/bin/bash", ["-n"], input: try GuestAgentInstallation.script(password: "pa$$ 'word")) == 0)
         #expect(try status(of: "/bin/sh", ["-n"], input: GuestAgentInstallation.rootCommands) == 0)
     }
 
@@ -35,7 +35,7 @@ struct GuestAgentInstallationTests {
 
     @Test
     func testThePreparationInstallsTheAgentAndLeavesTheShutdownToTheHost() throws {
-        let script = GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false, installAgent: true)
+        let script = try GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false, installAgent: true)
         #expect(try status(of: "/bin/bash", ["-n"], input: script) == 0)
         #expect(script.contains("launchctl bootstrap system \(GuestAgentInstallation.propertyListPath)"))
         #expect(!script.contains("sudo -n /sbin/shutdown -h now"))

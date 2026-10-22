@@ -105,7 +105,7 @@ extension ParbakeTool {
                 if let agentBinary {
                     try AgentSetup.stage(agentBinary, shell: ssh, address: address)
                 }
-                let script = GuestPreparation.script(
+                let script = try GuestPreparation.script(
                     username: username, password: password, publicKeys: publicKeys, tidy: tidy, installAgent: agentBinary != nil,
                     sudoCommands: sudo)
                 let result = ssh.run("/bin/bash -s", on: address, input: script)

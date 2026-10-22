@@ -55,20 +55,21 @@ public enum GuestAgentInstallation {
 
     /// The script that installs a staged agent in one SSH session of the provisioned account; the
     /// password reaches sudo through the script on ssh's standard input.
-    public static func script(password: String) -> String {
-        """
-        set -eu
-        IFS= read -r PARBAKE_PASSWORD <<'PARBAKE_PASSWORD'
-        \(password)
-        PARBAKE_PASSWORD
-        PARBAKE_ROOT=$(cat <<'PARBAKE_ROOT'
-        set -eu
-        \(rootCommands)PARBAKE_ROOT
-        )
-        printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
-        unset PARBAKE_PASSWORD
-        echo '\(installedMarker)'
+    public static func script(password: String) throws -> String {
+        try ScriptInput.check(password, field: "password")
+        return """
+            set -eu
+            IFS= read -r PARBAKE_PASSWORD <<'PARBAKE_PASSWORD'
+            \(password)
+            PARBAKE_PASSWORD
+            PARBAKE_ROOT=$(cat <<'PARBAKE_ROOT'
+            set -eu
+            \(rootCommands)PARBAKE_ROOT
+            )
+            printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
+            unset PARBAKE_PASSWORD
+            echo '\(installedMarker)'
 
-        """
+            """
     }
 }

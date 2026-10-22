@@ -144,8 +144,82 @@ struct GuestCredentialsTests {
 }
 
 struct GuestPreparationTests {
-    private let script = GuestPreparation.script(
-        username: "ci", password: "pa$$ 'word\\x", publicKeys: ["ssh-ed25519 AAAA one", "ssh-ed25519 BBBB two"], tidy: true)
+    private let script: String
+
+    init() throws {
+        script = try GuestPreparation.script(
+            username: "ci", password: "pa$$ 'word\\x", publicKeys: ["ssh-ed25519 AAAA one", "ssh-ed25519 BBBB two"], tidy: true)
+    }
+
+    @Test
+    func testHostileInputIsRefused() {
+        #expect(throws: (any Error).self) {
+            try GuestPreparation.script(username: "ci", password: "x\nPARBAKE_PASSWORD\ny", publicKeys: ["k"], tidy: false)
+        }
+        #expect(throws: (any Error).self) {
+            try GuestPreparation.script(username: "ci", password: "x", publicKeys: ["ssh-ed25519 AAAA\nPARBAKE_KEYS"], tidy: false)
+        }
+        #expect(throws: (any Error).self) {
+            try GuestPreparation.script(username: "a'b", password: "x", publicKeys: ["k"], tidy: false)
+        }
+        #expect(throws: (any Error).self) { try GuestAgentInstallation.script(password: "x\nPARBAKE_ROOT") }
+    }
+
+    @Test
+    func testHostileSudoCommandsAreRefusedByTheBuilder() {
+        for command in ["ALL", "/bin/sh -c x", "/usr/bin/*", "/a'b", "/a\nPARBAKE_ROOT", "/a,b", "relative/path", ""] {
+            #expect(throws: (any Error).self) {
+                try GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false, sudoCommands: [command])
+            }
+        }
+        #expect(throws: (any Error).self) {
+            try GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false, sudoCommands: ["/usr/bin/ok", "/a b"])
+        }
+    }
+
+    @Test
+    func testSudoCommandsFollowTheRule() throws {
+        try GuestPreparation.checkSudoCommand("/usr/sbin/softwareupdate")
+        for command in ["ALL", "/bin/sh -c x", "/usr/bin/*", "/x#y", "/a=b", "/a:b", "/a,b", "/a'b"] {
+            #expect(throws: (any Error).self) { try GuestPreparation.checkSudoCommand(command) }
+        }
+    }
+
+    @Test
+    func testPasswordReachesSudoVerbatimWithoutExpansion() throws {
+        let password = "p'$(touch MARKER)`touch MARKER`$(id)\\x"
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-sudo-\(UUID().uuidString)")
+        let bin = directory.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let marker = directory.appendingPathComponent("marker").path
+        let log = directory.appendingPathComponent("sudo.log").path
+        let shim = bin.appendingPathComponent("sudo")
+        try "#!/bin/sh\ncat >> \"$PARBAKE_TEST_SUDO_LOG\"\n".write(to: shim, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
+
+        let built = try GuestPreparation.script(
+            username: "ci", password: password.replacingOccurrences(of: "MARKER", with: marker), publicKeys: ["ssh-ed25519 AAAA one"], tidy: false)
+        let scriptFile = directory.appendingPathComponent("script.sh")
+        try built.write(to: scriptFile, atomically: true, encoding: .utf8)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [scriptFile.path]
+        process.environment = [
+            "HOME": directory.path, "PATH": "\(bin.path):/usr/bin:/bin", "PARBAKE_TEST_SUDO_LOG": log,
+        ]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+
+        let received = try String(contentsOfFile: log, encoding: .utf8)
+        #expect(received == password.replacingOccurrences(of: "MARKER", with: marker) + "\n")
+        #expect(!FileManager.default.fileExists(atPath: marker))
+    }
 
     @Test
     func testTheScriptParses() throws {
@@ -173,13 +247,13 @@ struct GuestPreparationTests {
     }
 
     @Test
-    func testTheShutdownComesLastAndTidyIsOptional() {
+    func testTheShutdownComesLastAndTidyIsOptional() throws {
         let lines = script.components(separatedBy: "\n").filter { !$0.isEmpty }
         #expect(lines.last == "sudo -n /sbin/shutdown -h now >/dev/null")
         #expect(script.contains("NOPASSWD: %s"))
         #expect(script.contains("'/sbin/shutdown'"))
         #expect(script.contains("mdutil -a -i off"))
-        let plain = GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false)
+        let plain = try GuestPreparation.script(username: "ci", password: "x", publicKeys: ["k"], tidy: false)
         #expect(!plain.contains("mdutil"))
         #expect(!plain.contains("Caches"))
     }

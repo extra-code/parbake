@@ -63,7 +63,7 @@ extension ParbakeTool.Agent {
                 let address = try await waitForSSH(virtualMachine, shell: shell)
                 print("\(username) answers over SSH at \(address)")
                 try AgentSetup.stage(binary, shell: shell, address: address)
-                let result = shell.run("/bin/bash -s", on: address, input: GuestAgentInstallation.script(password: password))
+                let result = shell.run("/bin/bash -s", on: address, input: try GuestAgentInstallation.script(password: password))
                 guard result.output.contains(GuestAgentInstallation.installedMarker) else {
                     throw ValidationError(
                         "installing the agent failed (ssh exit status \(result.status)): "
