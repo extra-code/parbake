@@ -9,7 +9,7 @@ import Virtualization
 
 /// Bundles on a volume other than the instance's: the base lives on an HFS+ disk image that the
 /// test attaches and detaches, so neither an APFS clone nor a cross-volume clone is possible.
-@Suite(.serialized)
+@Suite(.serialized, .tags(.hdiutil, .asif), .enabled(if: HostRequirement.hdiutilAvailable), .enabled(if: HostRequirement.asifSupported))
 struct OtherVolumeTests {
     private func hdiutil(_ arguments: [String]) throws -> String {
         let process = Process()

@@ -5,6 +5,7 @@ import ContainerizationError
 import Darwin
 import DiskImageKit
 import Foundation
+import ParbakeVersion
 import Virtualization
 
 /// A directory holding an installed macOS guest.
@@ -47,14 +48,24 @@ public struct MacOSVMBundle: Sendable {
     public let url: URL
 
     /// Opens the bundle at `url` and checks that every file of the layout exists.
+    ///
+    /// An instance whose disk image link is not backed by an overlay, or whose layer link has no
+    /// overlay, was left half-built; it is refused so that nothing opens the shared base writable.
     public init(url: URL) throws {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw RuntimeFailure.bundleMissing(path: url.path, missing: nil)
+        }
         for name in Self.fileNames {
             let path = url.appendingPathComponent(name).path
             guard FileManager.default.fileExists(atPath: path) else {
-                throw ContainerizationError(.notFound, message: "macOS VM bundle \(url.path) is missing \(name)")
+                throw RuntimeFailure.bundleMissing(path: url.path, missing: name)
             }
         }
         self.url = url
+        if isIncompleteInstance {
+            throw ContainerizationError(.invalidState, message: "\(url.path) is an incomplete instance; remove the container")
+        }
     }
 
     public var diskImageURL: URL { url.appendingPathComponent(Self.diskImageName) }
@@ -67,6 +78,18 @@ public struct MacOSVMBundle: Sendable {
     /// Whether this is a layer bundle, or an instance of one.
     public var hasLayer: Bool { FileManager.default.fileExists(atPath: layerImageURL.path) }
     private var hasOverlay: Bool { FileManager.default.fileExists(atPath: overlayImageURL.path) }
+
+    private static func isSymbolicLink(_ url: URL) -> Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+    }
+
+    /// Whether the links of an instance exist without the overlay that makes them safe to open: a
+    /// linked base without an overlay or a regular layer, or a linked layer without an overlay.
+    private var isIncompleteInstance: Bool {
+        guard !hasOverlay else { return false }
+        if Self.isSymbolicLink(layerImageURL) { return true }
+        return Self.isSymbolicLink(diskImageURL) && !hasLayer
+    }
     public var provisionedURL: URL { url.appendingPathComponent(Self.provisionedName) }
     public var guestKeyURL: URL { url.appendingPathComponent(Self.guestKeyName) }
     public var agentURL: URL { url.appendingPathComponent(Self.agentName) }
@@ -80,13 +103,19 @@ public struct MacOSVMBundle: Sendable {
         return version.isEmpty ? nil : version
     }
 
-    /// The guest account's username when provisioning created it, or nil.
+    /// The parsed version line of the guest agent, or nil without one or when it is malformed.
+    public var agentVersionLine: AgentVersionLine? {
+        agentVersion.flatMap { AgentVersionLine($0) }
+    }
+
+    /// The guest account's username when provisioning created it, or nil when the file is
+    /// missing or its content is not a valid `GuestUsername`.
     public var provisionedUsername: String? {
         guard let content = try? String(contentsOf: provisionedURL, encoding: .utf8) else {
             return nil
         }
         let username = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        return username.isEmpty ? nil : username
+        return GuestUsername(rawValue: username)?.rawValue
     }
 
     /// A shell that logs in to the guest with the provisioned account and the guest key, or nil
@@ -117,6 +146,9 @@ public struct MacOSVMBundle: Sendable {
     /// layer and the overlay stacked on it when the bundle has them. Only the top layer is
     /// writable: the overlay of an instance, or the layer of a layer bundle.
     public func storageDeviceAttachment() throws -> VZDiskImageStorageDeviceAttachment {
+        guard !isIncompleteInstance else {
+            throw ContainerizationError(.invalidState, message: "\(url.path) is an incomplete instance; remove the container")
+        }
         guard hasOverlay || hasLayer else {
             return try VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
         }
@@ -182,10 +214,39 @@ public struct MacOSVMBundle: Sendable {
     ///
     /// An instance of a layer bundle links its layer too, so the overlay stacks on base and layer.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
+        guard !hasOverlay else {
+            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
+        }
         try checkDiskImageIsASIF()
-        try copyBundleFiles(to: destination)
-        try linkBaseAndCreateOverlay(in: destination)
+        try Self.build(at: destination) { staging in
+            try copyBundleFiles(to: staging)
+            try linkBaseAndCreateOverlay(in: staging)
+        }
         return try MacOSVMBundle(url: destination)
+    }
+
+    /// Runs `body` on `<destination>.parbake-new` and renames that directory to `destination`
+    /// when it returns. `destination` never exists half-built; the staging directory is removed
+    /// when `body` or the rename throws.
+    private static func build(at destination: URL, _ body: (URL) throws -> Void) throws {
+        var isLink = stat()
+        guard lstat(destination.path, &isLink) != 0 else {
+            throw ContainerizationError(.exists, message: "\(destination.path) already exists")
+        }
+        let staging = URL(fileURLWithPath: destination.path + ".parbake-new")
+        try? FileManager.default.removeItem(at: staging)
+        do {
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+            try body(staging)
+            guard renamex_np(staging.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
+                throw ContainerizationError(
+                    .internalError, message: "failed to move \(staging.path) to \(destination.path)",
+                    cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: staging)
+            throw error
+        }
     }
 
     /// Creates a layer bundle in `destination` on this bundle; this bundle stays unchanged.
@@ -196,12 +257,12 @@ public struct MacOSVMBundle: Sendable {
     /// be the base of another one: Apple advises against deep stacks, and base, layer and overlay
     /// are three levels.
     public func layerBundle(at destination: URL) throws -> MacOSVMBundle {
+        guard !hasOverlay else {
+            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
+        }
         try checkDiskImageIsASIF()
         guard !hasLayer else {
             throw ContainerizationError(.unsupported, message: "\(url.path) is a layer bundle; a layer stacks on a base bundle only")
-        }
-        guard !hasOverlay else {
-            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
         }
         try copyBundleFiles(to: destination)
         let diskImageLink = try linkDiskImage(in: destination)
@@ -228,19 +289,45 @@ public struct MacOSVMBundle: Sendable {
     }
 
     /// Discards this instance's overlay and starts it over on `source`: the disk image link, the
-    /// auxiliary storage and the overlay are made anew from `source`, the machine identifier stays.
+    /// layer link, the overlay, the auxiliary storage, the hardware model and the provisioning
+    /// files are made anew from `source`, and files `source` lacks are removed. The machine
+    /// identifier stays.
     ///
-    /// The guest's writes since the instance was created are lost.
+    /// The new set is built in `<instance>.parbake-reset`, so a failure while building leaves the
+    /// instance as it was. The files are then moved in one by one, with the overlay last: the swap
+    /// is not atomic, and a failure while moving leaves the files moved so far from `source` and
+    /// the rest, the old overlay included, as they were. The guest's writes since the instance was
+    /// created are lost once the overlay is moved.
     public func resetOverlay(from source: MacOSVMBundle) throws {
         try source.checkDiskImageIsASIF()
-        for name in [Self.overlayImageName, Self.layerImageName, Self.diskImageName, Self.auxiliaryStorageName] {
-            let file = url.appendingPathComponent(name)
-            if (try? FileManager.default.destinationOfSymbolicLink(atPath: file.path)) != nil || FileManager.default.fileExists(atPath: file.path) {
-                try FileManager.default.removeItem(at: file)
+        let staging = URL(fileURLWithPath: url.path + ".parbake-reset")
+        try? FileManager.default.removeItem(at: staging)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        try source.copyBundleFiles(to: staging)
+        try source.linkBaseAndCreateOverlay(in: staging)
+
+        let replaced = [
+            Self.diskImageName, Self.layerImageName, Self.auxiliaryStorageName, Self.hardwareModelName,
+            Self.provisionedName, Self.guestKeyName, Self.agentName, Self.overlayImageName,
+        ]
+        for name in replaced {
+            let staged = staging.appendingPathComponent(name)
+            let target = url.appendingPathComponent(name)
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: staged.path)) != nil
+                || FileManager.default.fileExists(atPath: staged.path)
+            {
+                guard rename(staged.path, target.path) == 0 else {
+                    throw ContainerizationError(
+                        .internalError, message: "failed to move \(staged.path) to \(target.path)",
+                        cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                }
+            } else if (try? FileManager.default.destinationOfSymbolicLink(atPath: target.path)) != nil
+                || FileManager.default.fileExists(atPath: target.path)
+            {
+                try FileManager.default.removeItem(at: target)
             }
         }
-        try Self.cloneFiles([Self.auxiliaryStorageName], from: source.url, to: url)
-        try source.linkBaseAndCreateOverlay(in: url)
     }
 
     /// Links this bundle's disk image as `Disk.img` in `destination` and returns the link.
