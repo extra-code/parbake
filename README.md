@@ -32,9 +32,9 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 - Mac with Apple silicon, macOS 27 or later, Xcode 27 (macOS 27 SDK)
 - [OCX](https://ocx.sh) for `task` and the lint tools; run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`
 - For `--username` provisioning and the guest agent: a macOS 27 or later guest
-- An apple/container build whose plugin config supports `[runtimeConfig]`: the
-  [extra-code/container](https://github.com/extra-code/container) fork at the revision `Package.swift` pins.
-  SwiftPM fetches it, and `dev-env.sh` builds it
+- An apple/container build whose plugin config supports `[runtimeConfig]`: apple/container `804209b1`
+  with three runtime-plugin commits, tag `parbake-804209b1` of the
+  [extra-code/container](https://github.com/extra-code/container) fork. SwiftPM fetches it, and `dev-env.sh` builds it
 - A macOS VM bundle with an ASIF `Disk.img`, `AuxiliaryStorage`, `HardwareModel` and `MachineIdentifier`, as `parbake create` builds it
 - Do not boot a bundle read-write while containers run from it: their overlays build on its disk as it is.
 
@@ -133,6 +133,9 @@ task install INSTALL_ROOT=/usr/local  # installs to <root>/libexec/container-plu
 `INSTALL_ROOT` is the root of the container installation that loads the plugin. `parbake` and
 `parbake-agent` are installed next to the plugin binary. Restart the
 container system services after you install the plugin.
+
+`task sign` signs ad hoc. To sign with an Apple Development identity, or to see what a Developer
+ID adds, read [docs/signing.md](docs/signing.md).
 
 ## Run
 

@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+name: Feature request
+description: A capability the runtime, parbake or the guest agent should offer
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need
+      description: The task you want to do with a macOS container, and where the runtime stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The command, option or behaviour you have in mind, if any.

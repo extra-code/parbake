@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug report
+description: Something in the runtime plugin, parbake or the guest agent does not work as described
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. parbake create --username ci ...
+        2. container run --runtime container-runtime-macos ...
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: Mac model, macOS version and Xcode version.
+      placeholder: Mac mini M4, macOS 27.0, Xcode 27.0
+    validations:
+      required: true
+  - type: input
+    id: guest
+    attributes:
+      label: Guest
+      description: macOS version of the bundle, and whether it was provisioned with the guest agent.
+  - type: input
+    id: container
+    attributes:
+      label: apple/container
+      description: The apple/container commit the plugin was built against, the `container` revision in `Package.resolved`.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The plugin log of the container, and parbake output.
+      render: text
