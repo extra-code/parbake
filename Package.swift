@@ -33,6 +33,7 @@ let package = Package(
             name: "container-runtime-macos",
             dependencies: [
                 "RuntimeMacOS",
+                "ParbakeVersion",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "SystemPackage", package: "swift-system"),
@@ -51,6 +52,7 @@ let package = Package(
             name: "parbake",
             dependencies: [
                 "RuntimeMacOS",
+                "ParbakeVersion",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
@@ -61,6 +63,7 @@ let package = Package(
         .executableTarget(
             name: "parbake-agent",
             dependencies: [
+                "ParbakeVersion",
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
@@ -69,9 +72,11 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]
         ),
+        .target(name: "ParbakeVersion"),
         .target(
             name: "RuntimeMacOS",
             dependencies: [
+                "ParbakeVersion",
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
@@ -85,6 +90,10 @@ let package = Package(
         .testTarget(
             name: "ParbakeTests",
             dependencies: ["parbake"]
+        ),
+        .testTarget(
+            name: "ParbakeVersionTests",
+            dependencies: ["ParbakeVersion"]
         ),
     ]
 )
