@@ -11,27 +11,104 @@ import Security
 /// configuration file holds it. Each password is a generic password item: the service names the
 /// store, the account is the guest username.
 ///
-/// Every access goes through `/usr/bin/security`, which creates the items with `-A`. The items
-/// belong to that stable, Apple-signed tool, so a rebuilt or updated binary, whose ad-hoc signature
-/// differs, never triggers a keychain dialog. Commands reach `security` on standard input, so a
-/// password is in no argument list. A newline cannot be part of a password.
+/// With `.anyApplication` every access goes through `/usr/bin/security`, which creates the items
+/// with `-A`. The items belong to that stable, Apple-signed tool, so a rebuilt or updated binary,
+/// whose ad-hoc signature differs, never triggers a keychain dialog. Commands reach `security` on
+/// standard input, so a password is in no argument list. A newline cannot be part of a password.
+///
+/// With `.creatorOnly` the Security framework creates, reads and deletes the items in this process;
+/// the default access list admits the creating, signed binary only.
 public struct GuestCredentials: Sendable {
     public static let defaultService = "container-runtime-macos.guest"
 
-    public let service: String
+    /// The account of the reserved item `preflight()` looks up. It is never created.
+    static let preflightAccount = "parbake-preflight"
 
-    public init(service: String = Self.defaultService) {
+    /// Printed when items are created open to every application.
+    public static let adHocWarning =
+        "this build is ad-hoc signed, so the keychain item is readable by every application of this user; "
+        + "sign parbake with a team identity to restrict it to parbake."
+
+    public let service: String
+    public let access: KeychainAccess
+
+    public init(service: String = Self.defaultService, access: KeychainAccess = .for(.ofCurrentProcess())) {
         self.service = service
+        self.access = access
+    }
+
+    /// Probes the keychain with a lookup for a reserved account and creates nothing.
+    ///
+    /// A missing item counts as success; a locked or refusing keychain throws its classified failure.
+    public func preflight() throws {
+        switch access {
+        case .anyApplication:
+            let result = try Self.security(["find-generic-password", "-s", service, "-a", Self.preflightAccount])
+            if result.status == 0 || result.status == Self.itemNotFoundStatus { return }
+            throw Self.failure(result, service: service, "probe the keychain")
+        case .creatorOnly:
+            var query = baseQuery(account: Self.preflightAccount)
+            query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+            let status = SecItemCopyMatching(query as CFDictionary, nil)
+            if status == errSecSuccess || status == errSecItemNotFound { return }
+            throw Self.failure(status: status, service: service, "probe the keychain")
+        }
+    }
+
+    /// The failure for a `security` or Security framework status that names a locked or refusing keychain, else nil.
+    static func classify(status: Int32, errorOutput: String, service: String) -> RuntimeFailure? {
+        if status == 0 || status == itemNotFoundStatus { return nil }
+        let text = errorOutput.lowercased()
+        if text.contains("user interaction is not allowed") || text.contains("\(errSecInteractionNotAllowed)") || status == errSecInteractionNotAllowed {
+            return .keychainLocked(service: service)
+        }
+        if status == errSecAuthFailed || status == errSecUserCanceled || text.contains("\(errSecAuthFailed)") || text.contains("\(errSecUserCanceled)")
+            || text.contains("authorization") || text.contains("denied")
+        {
+            return .keychainRefused(service: service, status: status)
+        }
+        return nil
+    }
+
+    private func baseQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
+    private static func failure(status: OSStatus, service: String, _ action: String) -> Error {
+        if let failure = classify(status: status, errorOutput: "", service: service) { return failure }
+        return ContainerizationError(.internalError, message: "failed to \(action): keychain status \(status)")
+    }
+
+    private static func failure(_ result: SecurityResult, service: String, _ action: String) -> Error {
+        classify(status: result.status, errorOutput: result.errorOutput, service: service) ?? error(result, action)
     }
 
     /// The stored password for `username`, or nil when there is none.
     public func password(for username: String) throws -> String? {
+        if access == .creatorOnly {
+            try ScriptInput.check(service, field: "keychain service")
+            try ScriptInput.check(username, field: "keychain account")
+            var query = baseQuery(account: username)
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            var item: CFTypeRef?
+            let status = SecItemCopyMatching(query as CFDictionary, &item)
+            if status == errSecItemNotFound { return nil }
+            guard status == errSecSuccess, let data = item as? Data else {
+                throw Self.failure(status: status, service: service, "read the password of \(username) from the keychain")
+            }
+            return String(decoding: data, as: UTF8.self)
+        }
         let result = try Self.security(["find-generic-password", "-s", service, "-a", username, "-w"])
         if result.status == Self.itemNotFoundStatus {
             return nil
         }
         guard result.status == 0 else {
-            throw Self.error(result, "read the password of \(username) from the keychain")
+            throw Self.failure(result, service: service, "read the password of \(username) from the keychain")
         }
         return result.output.hasSuffix("\n") ? String(result.output.dropLast()) : result.output
     }
@@ -44,6 +121,19 @@ public struct GuestCredentials: Sendable {
             throw ContainerizationError(.invalidArgument, message: "a keychain password cannot contain a newline")
         }
         try remove(for: username)
+        if access == .creatorOnly {
+            try ScriptInput.check(service, field: "keychain service")
+            try ScriptInput.check(username, field: "keychain account")
+            try ScriptInput.check(password, field: "keychain password")
+            var query = baseQuery(account: username)
+            query[kSecAttrLabel as String] = "\(service) (\(username))"
+            query[kSecValueData as String] = Data(password.utf8)
+            let status = SecItemAdd(query as CFDictionary, nil)
+            guard status == errSecSuccess else {
+                throw Self.failure(status: status, service: service, "add the password of \(username) to the keychain")
+            }
+            return
+        }
         let result = try Self.security([
             "add-generic-password", "-A",
             "-s", service,
@@ -52,15 +142,24 @@ public struct GuestCredentials: Sendable {
             "-w", password,
         ])
         guard result.status == 0 else {
-            throw Self.error(result, "add the password of \(username) to the keychain")
+            throw Self.failure(result, service: service, "add the password of \(username) to the keychain")
         }
     }
 
     /// Removes the stored password for `username`; a missing one is not an error.
     public func remove(for username: String) throws {
+        if access == .creatorOnly {
+            try ScriptInput.check(service, field: "keychain service")
+            try ScriptInput.check(username, field: "keychain account")
+            let status = SecItemDelete(baseQuery(account: username) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw Self.failure(status: status, service: service, "remove the password of \(username) from the keychain")
+            }
+            return
+        }
         let result = try Self.security(["delete-generic-password", "-s", service, "-a", username])
         guard result.status == 0 || result.status == Self.itemNotFoundStatus else {
-            throw Self.error(result, "remove the password of \(username) from the keychain")
+            throw Self.failure(result, service: service, "remove the password of \(username) from the keychain")
         }
     }
 
@@ -103,6 +202,9 @@ public struct GuestCredentials: Sendable {
 
     /// Runs one `security` command through its interactive mode, which exits with the command's status.
     static func security(_ arguments: [String]) throws -> SecurityResult {
+        for argument in arguments {
+            try ScriptInput.check(argument, field: "keychain argument")
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         process.arguments = ["-i"]

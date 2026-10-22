@@ -38,6 +38,10 @@ Environment:
                          the container revision in Package.resolved that build creates)
   DEV_APP_ROOT           Application data of the development build (default: ~/.container-macos-dev)
   INSTALLED_CONTAINER    Installed CLI (default: /usr/local/bin/container)
+  CODESIGN_IDENTITY      Signing identity for the plugin build (default: - for ad hoc; keep it
+                         with an ad-hoc container build; see docs/signing.md)
+  PARBAKE_CODESIGN_IDENTITY
+                         Signing identity for parbake alone (default: CODESIGN_IDENTITY)
 EOF
 }
 
@@ -86,7 +90,7 @@ build() {
     step "Building container in ${CONTAINER_SRC}"
     make -C "${CONTAINER_SRC}" container
     step "Installing the plugin into ${CONTAINER_SRC}/libexec/container-plugins"
-    ocx --project "${PLUGIN_ROOT}" exec -- task -d "${PLUGIN_ROOT}" install INSTALL_ROOT="${CONTAINER_SRC}"
+    ocx --project "${PLUGIN_ROOT}" exec -- task -d "${PLUGIN_ROOT}" install INSTALL_ROOT="${CONTAINER_SRC}" CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}" PARBAKE_CODESIGN_IDENTITY="${PARBAKE_CODESIGN_IDENTITY:-${CODESIGN_IDENTITY:--}}"
 }
 
 up() {

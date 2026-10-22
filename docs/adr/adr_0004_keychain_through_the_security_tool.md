@@ -1,3 +1,4 @@
+<!-- doc_type: explanation -->
 # ADR: The guest password lives in the keychain and is reached only through `/usr/bin/security`
 
 ## Metadata
@@ -15,13 +16,14 @@
 **Domain Tags:** security, credentials
 **Supersedes:** N/A
 **Superseded By:** N/A
+**Amended By:** [ADR 0010](adr_0010_keychain_access_follows_the_signing_identity.md)
 
 ## Context
 
 `parbake provision --keychain` keeps the guest account's password in the login keychain so nobody
 types it on a CI host. The binaries are ad-hoc signed, so every build has a new code identity.
 
-Measured on this host, 2026-10-18:
+Validation found:
 
 - An item created with `SecItemAdd` by one build of `parbake` prompted when a rebuilt `parbake`
   read it; provisioning waited on the dialog.
@@ -69,7 +71,7 @@ Passwords cannot contain a newline.
 
 **Positive:**
 
-- No dialog from provisioning or tests; the keychain tests run in 0.2 s.
+- Provisioning and tests complete without a dialog.
 
 **Negative:**
 
@@ -79,13 +81,15 @@ Passwords cannot contain a newline.
 ## Validation
 
 - [x] `GuestCredentialsTests`: round trip, replace, remove, and `security` reading the item without
-      a prompt, each in milliseconds.
-- [x] On this host: provisioning `runner` with `--keychain` without a dialog.
+      a prompt.
+- [x] Host integration validation: provisioning a guest account with `--keychain` without a dialog.
 
 ## Links
 
 - Code: `Sources/RuntimeMacOS/GuestCredentials.swift`
+- [ADR 0010](adr_0010_keychain_access_follows_the_signing_identity.md): a build with a stable identity keeps the item for itself
 
 ## Changelog
 
 - 2026-10-18 — Initial version.
+- 2026-10-22 — Amended by ADR 0010: this decision applies to ad-hoc builds.

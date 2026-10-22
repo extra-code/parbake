@@ -10,7 +10,12 @@ vars:
   NAME: container-runtime-macos
   SWIFT: /usr/bin/swift
   CONFIGURATION: '{{.CONFIGURATION | default "debug"}}'
-  CODESIGN_OPTS: '{{.CODESIGN_OPTS | default "--force --sign - --timestamp=none"}}'
+  # `-` signs ad hoc; any other value must name an identity that `security find-identity` lists.
+  CODESIGN_IDENTITY: '{{.CODESIGN_IDENTITY | default "-"}}'
+  # Signs `parbake` alone; defaults to CODESIGN_IDENTITY. The plugin and `parbake-agent` keep CODESIGN_IDENTITY.
+  PARBAKE_CODESIGN_IDENTITY: '{{.PARBAKE_CODESIGN_IDENTITY | default .CODESIGN_IDENTITY}}'
+  PARBAKE_CODESIGN_OPTS: '{{.PARBAKE_CODESIGN_OPTS | default (printf "--force --sign %q --timestamp=none" .PARBAKE_CODESIGN_IDENTITY)}}'
+  CODESIGN_OPTS: '{{.CODESIGN_OPTS | default (printf "--force --sign %q --timestamp=none" .CODESIGN_IDENTITY)}}'
   # Root of the container installation; plugins load from <root>/libexec/container-plugins.
   INSTALL_ROOT: '{{.INSTALL_ROOT | default "/usr/local"}}'
   PLUGIN_DIR: "{{.INSTALL_ROOT}}/libexec/container-plugins/{{.NAME}}"
@@ -37,15 +42,29 @@ tasks:
     cmds:
       - "{{.SWIFT}} build -c {{.CONFIGURATION}}"
 
+  sign:identity:
+    internal: true
+    silent: true
+    cmds:
+      - echo "signing with {{.CODESIGN_IDENTITY}}; parbake with {{.PARBAKE_CODESIGN_IDENTITY}}"
+      - |
+        for identity in "{{.CODESIGN_IDENTITY}}" "{{.PARBAKE_CODESIGN_IDENTITY}}"; do
+          if [ "$identity" != "-" ] && ! security find-identity -v -p codesigning | grep -qF -- "\"$identity\""; then
+            echo "error: signing identity \"$identity\" is not in the keychain; see docs/signing.md" >&2
+            exit 1
+          fi
+        done
+
   sign:
-    desc: Build and ad-hoc sign the binaries with their entitlements
-    deps: [build]
+    desc: Build and sign the binaries with their entitlements (CODESIGN_IDENTITY, default ad hoc; PARBAKE_CODESIGN_IDENTITY for parbake alone)
     vars:
       BIN_DIR:
         sh: "{{.SWIFT}} build -c {{.CONFIGURATION}} --show-bin-path"
     cmds:
+      - task: sign:identity
+      - task: build
       - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/{{.NAME}}"
-      - codesign {{.CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/parbake"
+      - codesign {{.PARBAKE_CODESIGN_OPTS}} --entitlements={{.NAME}}.entitlements "{{.BIN_DIR}}/parbake"
       - codesign {{.CODESIGN_OPTS}} "{{.BIN_DIR}}/parbake-agent"
 
   bin-path:

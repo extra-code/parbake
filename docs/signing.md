@@ -52,16 +52,40 @@ covers it.
 
 ## Sign with the identity {#sign-with-the-identity}
 
-Pass the identity to `task` through `CODESIGN_OPTS`, then read the signature back:
+Pass the identity to `task` through `CODESIGN_IDENTITY`, then read the signature back:
 
 ```bash
-task sign CODESIGN_OPTS="--force --sign 'Apple Development: <account> (<id>)' --timestamp=none"
+task sign CODESIGN_IDENTITY="Apple Development: <account> (<id>)"
 codesign -dv --verbose=2 "$(task bin-path)/container-runtime-macos" 2>&1 | grep -E 'Authority|TeamIdentifier'
 ```
 
 The second command prints three authorities and your team ID. The authorities are the identity,
 Apple Worldwide Developer Relations and Apple Root CA. `task install` and `task check` take the
-same variable.
+same variable, and so does `scripts/dev-env.sh`.
+
+The plugin must share a signing domain with the `container` services it joins.
+A source build of apple/container is signed ad hoc, so install the plugin with the ad-hoc identity.
+A plugin signed with a team identity cannot attach to an ad-hoc network service.
+Its start then fails with "failed to start the DHCP interface on the vmnet network, status 1001".
+The keychain item needs the identity on `parbake` only, because the plugin never reads it.
+
+`CODESIGN_IDENTITY` signs the plugin and `parbake-agent`. `PARBAKE_CODESIGN_IDENTITY` signs `parbake`
+alone and defaults to `CODESIGN_IDENTITY`. `PARBAKE_CODESIGN_OPTS` sets its signing options.
+To keep the plugin ad hoc and sign `parbake` with a team identity:
+
+```bash
+task sign PARBAKE_CODESIGN_IDENTITY="Apple Development: <account> (<id>)"
+```
+
+`scripts/dev-env.sh` passes both identities. CI signs ad hoc.
+
+Pass the identity's name, as `security find-identity -v -p codesigning` prints it in quotes.
+`task sign` checks that name, so the SHA-1 hash that `codesign` itself accepts fails the check.
+
+`CODESIGN_IDENTITY` defaults to `-`, the ad-hoc identity. It can also come from the environment.
+`task sign` prints `signing with <identity>`. For any other identity, it fails before building when
+`security find-identity -v -p codesigning` does not list it. An explicit `CODESIGN_OPTS` still
+overrides the default signing options.
 
 ## Use a Developer ID {#use-a-developer-id}
 

@@ -87,6 +87,7 @@ struct GuestProvisioningTests {
     }
 }
 
+@Suite(.tags(.keychain), .enabled(if: HostRequirement.loginKeychainUsable))
 struct GuestCredentialsTests {
     @Test
     func testGeneratedPasswordsUseTheAlphabetAndDiffer() throws {
@@ -99,7 +100,7 @@ struct GuestCredentialsTests {
 
     @Test
     func testStoresReplacesAndRemovesAPassword() throws {
-        let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)")
+        let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication)
         defer { try? credentials.remove(for: "ci") }
         #expect(try credentials.password(for: "ci") == nil)
 
@@ -117,7 +118,7 @@ struct GuestCredentialsTests {
     @Test
     func testTheSecurityToolReadsThePasswordWithoutAPrompt() throws {
         let service = "container-runtime-macos.test.\(UUID().uuidString)"
-        let credentials = GuestCredentials(service: service)
+        let credentials = GuestCredentials(service: service, access: .anyApplication)
         defer { try? credentials.remove(for: "ci") }
         try credentials.store("open-to-every-app", for: "ci")
 
@@ -140,6 +141,93 @@ struct GuestCredentialsTests {
         let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         #expect(process.terminationStatus == 0)
         #expect(output.trimmingCharacters(in: .newlines) == "open-to-every-app")
+    }
+
+    @Test
+    func testClassifyMapsKeychainStatuses() {
+        let service = "svc"
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "User interaction is not allowed.", service: service) == .keychainLocked(service: service))
+        #expect(GuestCredentials.classify(status: -25308, errorOutput: "", service: service) == .keychainLocked(service: service))
+        #expect(GuestCredentials.classify(status: -25293, errorOutput: "", service: service) == .keychainRefused(service: service, status: -25293))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "access denied", service: service) == .keychainRefused(service: service, status: 1))
+        #expect(GuestCredentials.classify(status: 44, errorOutput: "could not be found", service: service) == nil)
+        #expect(GuestCredentials.classify(status: 0, errorOutput: "", service: service) == nil)
+        #expect(GuestCredentials.classify(status: 7, errorOutput: "something else", service: service) == nil)
+    }
+
+    @Test
+    func testClassifyMapsTheRemainingRows() {
+        let service = "svc"
+        #expect(GuestCredentials.classify(status: -128, errorOutput: "", service: service) == .keychainRefused(service: service, status: -128))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "error -128", service: service) == .keychainRefused(service: service, status: 1))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "error -25293", service: service) == .keychainRefused(service: service, status: 1))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "Authorization failed", service: service) == .keychainRefused(service: service, status: 1))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "error -25308", service: service) == .keychainLocked(service: service))
+        #expect(GuestCredentials.classify(status: 1, errorOutput: "USER INTERACTION IS NOT ALLOWED", service: service) == .keychainLocked(service: service))
+        #expect(GuestCredentials.classify(status: 44, errorOutput: "User interaction is not allowed.", service: service) == nil)
+        #expect(GuestCredentials.classify(status: 0, errorOutput: "denied", service: service) == nil)
+    }
+
+    @Test
+    func testSecurityArgumentsAreCheckedAndQuoted() throws {
+        for hostile in ["a\nb", "a\u{0}b", "x PARBAKE_y", "a\rb", "a\u{7F}b"] {
+            #expect(throws: (any Error).self) { try GuestCredentials.security(["find-generic-password", "-s", hostile]) }
+        }
+        #expect(GuestCredentials.quoted(#"a"b\c"#) == #""a\"b\\c""#)
+        #expect(GuestCredentials.quoted("it's $(id)") == "\"it's $(id)\"")
+    }
+
+    @Test
+    func testPreflightNeverCreatesTheProbeAccount() throws {
+        let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication)
+        try credentials.preflight()
+        try credentials.preflight()
+        #expect(try credentials.password(for: GuestCredentials.preflightAccount) == nil)
+    }
+
+    @Test
+    func testAccessFollowsTheSigningIdentity() {
+        #expect(KeychainAccess.for(.adHoc) == .anyApplication)
+        #expect(KeychainAccess.for(.team("ABCDE12345")) == .creatorOnly)
+    }
+
+    @Test
+    func testTheWarningNamesTheScopeAndTheRemedy() {
+        #expect(GuestCredentials.adHocWarning.contains("every application of this user"))
+        #expect(GuestCredentials.adHocWarning.contains("sign parbake with a team identity"))
+        #expect(!GuestCredentials.adHocWarning.contains("docs/"))
+    }
+
+    @Test
+    func testTheTestBinaryIsAdHocSigned() {
+        #expect(SigningIdentity.ofCurrentProcess() == .adHoc)
+    }
+
+    @Test
+    func testPreflightSucceedsOnAnUnlockedKeychain() throws {
+        try GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication).preflight()
+    }
+
+    @Test
+    func testAServiceWithANewlineIsRefusedBeforeSecurityRuns() {
+        let credentials = GuestCredentials(service: "bad\nservice", access: .anyApplication)
+        #expect(throws: (any Error).self) { try credentials.password(for: "ci") }
+        #expect(throws: (any Error).self) { try credentials.store("secret-value", for: "ci") }
+        #expect(throws: (any Error).self) { try credentials.remove(for: "ci") }
+    }
+
+    @Test(.enabled(if: SigningIdentity.ofCurrentProcess() != .adHoc))
+    func testACreatorOnlyRoundTrip() throws {
+        let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .creatorOnly)
+        defer { try? credentials.remove(for: "ci") }
+        try credentials.preflight()
+        #expect(try credentials.password(for: "ci") == nil)
+        try credentials.store("first-value", for: "ci")
+        #expect(try credentials.password(for: "ci") == "first-value")
+        try credentials.store("second-value", for: "ci")
+        #expect(try credentials.password(for: "ci") == "second-value")
+        try credentials.remove(for: "ci")
+        #expect(try credentials.password(for: "ci") == nil)
     }
 }
 
