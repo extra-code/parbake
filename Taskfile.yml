@@ -117,6 +117,7 @@ tasks:
       - task: lint:swift
       - task: lint:sh
       - task: lint:reuse
+      - task: lint:boundaries
 
   lint:reuse:
     cmds:
@@ -130,6 +131,11 @@ tasks:
     cmds:
       - "{{.SHELLCHECK}} {{.SHELL_FILES | catLines}}"
       - "{{.SHFMT}} -d {{.SHELL_FILES | catLines}}"
+
+  lint:boundaries:
+    cmds:
+      - scripts/lint-boundaries.sh --self-test
+      - scripts/lint-boundaries.sh
 
   check:
     desc: Lint, build, sign and test — the full local gate
