@@ -95,5 +95,9 @@ let package = Package(
             name: "ParbakeVersionTests",
             dependencies: ["ParbakeVersion"]
         ),
+        .testTarget(
+            name: "ParbakeAgentTests",
+            dependencies: ["parbake-agent"]
+        ),
     ]
 )

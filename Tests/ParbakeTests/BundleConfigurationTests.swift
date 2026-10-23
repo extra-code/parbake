@@ -100,10 +100,11 @@ struct BundleConfigurationTests {
 
     @Test
     func testSudoCommandsJoinTheSudoersEntry() throws {
-        try GuestPreparation.checkSudoCommand("/usr/sbin/softwareupdate -i *")
+        try GuestPreparation.checkSudoCommand("/usr/sbin/softwareupdate")
+        #expect(throws: (any Error).self) { try GuestPreparation.checkSudoCommand("/usr/sbin/softwareupdate -i *") }
         let script = try GuestPreparation.script(
-            username: "runner", password: "pw", publicKeys: ["ssh-ed25519 AAAA"], tidy: false, sudoCommands: ["/usr/sbin/softwareupdate -i *"])
+            username: "runner", password: "pw", publicKeys: ["ssh-ed25519 AAAA"], tidy: false, sudoCommands: ["/usr/sbin/softwareupdate"])
 
-        #expect(script.contains("'/sbin/shutdown, /usr/sbin/softwareupdate -i *'"))
+        #expect(script.contains("'/sbin/shutdown, /usr/sbin/softwareupdate'"))
     }
 }

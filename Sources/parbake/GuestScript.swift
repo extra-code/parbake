@@ -25,7 +25,7 @@ enum GuestScript {
                 print("==> Running \(script.lastPathComponent) as root")
                 let code = try await run(script, agent: agent)
                 guard code == 0 else {
-                    throw ValidationError("\(script.lastPathComponent) exited with \(code)")
+                    throw ParbakeError.scriptFailed(name: script.lastPathComponent, status: code)
                 }
             }
             print("==> Shutting the guest down")

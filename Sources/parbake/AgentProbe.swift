@@ -6,6 +6,7 @@ import Containerization
 import ContainerizationOCI
 import Foundation
 import NIOPosix
+import ParbakeVersion
 import RuntimeMacOS
 
 extension ParbakeTool {
@@ -19,7 +20,8 @@ extension ParbakeTool {
                 calls the agent through containerization's Vminitd client on vsock: Getenv for the \
                 agent version and for HOME, Sync, and one call the agent does not implement. The \
                 guest is shut down and the instance removed afterwards; the bundle stays unchanged.
-                """
+                """,
+            shouldDisplay: false
         )
 
         @Option(name: .long, help: "Path of a provisioned VM bundle with a guest key")
@@ -35,9 +37,10 @@ extension ParbakeTool {
             setvbuf(stdout, nil, _IOLBF, 0)
             let source = try MacOSVMBundle(url: URL(fileURLWithPath: bundle))
             guard let shell = source.guestShell else {
-                throw ValidationError("\(bundle) has no Provisioned account or GuestKey")
+                throw ParbakeError.runtime("\(bundle) has no Provisioned account or GuestKey")
             }
-            let agentURL = agent.map { URL(fileURLWithPath: $0) }
+            let agentURL =
+                agent.map { URL(fileURLWithPath: $0) }
                 ?? URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
                 .deletingLastPathComponent().appendingPathComponent("parbake-agent")
             let agentBinary = try Data(contentsOf: agentURL)
@@ -61,15 +64,15 @@ extension ParbakeTool {
                         + "(nohup /tmp/parbake-agent >/tmp/parbake-agent.log 2>&1 </dev/null &) && echo started",
                     on: address, input: agentBinary)
                 guard install.output.contains("started") else {
-                    throw ValidationError("failed to start the agent in the guest: \(install.errorOutput)")
+                    throw ParbakeError.runtime("failed to start the agent in the guest: \(LogText.sanitized(install.errorOutput))")
                 }
                 print("Copied \(agentBinary.count / 1_000_000) MB agent into the guest and started it")
 
                 let agentClient = try await dialAgent(virtualMachine)
                 print("vsock port \(Vminitd.port) accepted a connection after \(started.duration(to: .now))")
-                let version = try await agentClient.getenv(key: "CONTAINER_RUNTIME_MACOS_AGENT")
+                let version = try await agentClient.getenv(key: AgentVersionLine.variable)
                 let home = try await agentClient.getenv(key: "HOME")
-                print("Getenv CONTAINER_RUNTIME_MACOS_AGENT = \(version)")
+                print("Getenv \(AgentVersionLine.variable) = \(version)")
                 print("Getenv HOME = \(home)")
                 try await agentClient.sync()
                 print("Sync succeeded")
@@ -105,7 +108,7 @@ extension ParbakeTool {
                 process: Process(args: ["/bin/sh", "-c", "echo out; echo err >&2; exit 3"], user: account))
             print("V-2 streams: stdout \(separate.stdout.debugDescription), stderr \(separate.stderr.debugDescription), exit \(separate.exitCode)")
             guard separate.stdout == "out\n", separate.stderr == "err\n", separate.exitCode == 3 else {
-                throw ValidationError("V-2 failed")
+                throw ParbakeError.runtime("the V-2 stream check failed")
             }
 
             let echoed = try await run(
@@ -123,7 +126,7 @@ extension ParbakeTool {
             let signalled = try await agent.waitProcess(id: "v2-signal", containerID: nil)
             print("signal: pid \(pid) got SIGTERM, exit \(signalled.exitCode)")
             guard signalled.exitCode == 128 + SIGTERM else {
-                throw ValidationError("a process stopped by SIGTERM must exit \(128 + SIGTERM)")
+                throw ParbakeError.runtime("a process stopped by SIGTERM must exit \(128 + SIGTERM)")
             }
             try await agent.deleteProcess(id: "v2-signal", containerID: nil)
 
@@ -173,15 +176,18 @@ extension ParbakeTool {
 
         private func waitForSSH(_ virtualMachine: MacOSVirtualMachine, shell: GuestShell) async throws -> String {
             let deadline = ContinuousClock.now + .seconds(timeout)
+            var leased: String?
             while ContinuousClock.now < deadline {
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress),
-                    shell.run("true", on: address).status == 0
-                {
-                    return address
+                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
+                    leased = address
+                    if shell.run("true", on: address).status == 0 { return address }
                 }
                 try await Task.sleep(for: .seconds(3))
             }
-            throw ValidationError("the guest did not answer over SSH within \(timeout) seconds")
+            if let leased {
+                throw ParbakeError.failure(.sshTimeout(username: shell.username, address: leased, seconds: timeout))
+            }
+            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
         }
 
         private func dialAgent(_ virtualMachine: MacOSVirtualMachine) async throws -> Vminitd {
@@ -196,7 +202,7 @@ extension ParbakeTool {
                     try await Task.sleep(for: .seconds(1))
                 }
             }
-            throw ValidationError("the agent did not accept a vsock connection: \(String(describing: lastError))")
+            throw ParbakeError.runtime("the agent did not accept a vsock connection: \(String(describing: lastError))")
         }
     }
 }

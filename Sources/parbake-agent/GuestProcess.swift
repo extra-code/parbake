@@ -319,6 +319,7 @@ struct Launch {
             self.arguments = [resolved] + process.args.dropFirst()
             self.environment = environmentList
         } else if current == 0 {
+            try GUISession.require(uid: account.uid, name: account.name)
             // The account's session bootstrap gives the process the login keychain and the window server.
             self.executable = "/bin/launchctl"
             self.arguments =

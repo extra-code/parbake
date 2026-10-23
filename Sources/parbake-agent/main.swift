@@ -5,11 +5,10 @@ import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
 import NIOPosix
+import ParbakeVersion
 
-/// The protocol version of this agent; it changes only when the guest agent spec changes the wire contract.
-let protocolVersion = 1
-/// The environment variable the runtime reads through `Getenv` to recognise the agent.
-let versionVariable = "CONTAINER_RUNTIME_MACOS_AGENT"
+signal(SIGPIPE, SIG_IGN)
+
 /// The vsock port containerization's agents serve on.
 let defaultPort = 1024
 
@@ -18,7 +17,7 @@ ControllingTerminal.runIfRequested(CommandLine.arguments)
 let arguments = CommandLine.arguments.dropFirst()
 let port = arguments.first.flatMap(Int.init) ?? defaultPort
 
-setenv(versionVariable, "\(protocolVersion)", 1)
+setenv(AgentVersionLine.variable, AgentVersionLine.current.description, 1)
 
 // The gRPC server listens only on a Unix socket that no other account can open; the host reaches it
 // through VsockFront, which admits the host's CID alone.

@@ -40,6 +40,11 @@ public struct RestoreImageCache: Sendable {
         directory.appendingPathComponent(url.lastPathComponent)
     }
 
+    /// The lock that serializes downloads and pruning in this cache.
+    public var lockFile: URL {
+        directory.appendingPathComponent(".lock")
+    }
+
     public func isComplete(_ file: URL) -> Bool {
         FileManager.default.fileExists(atPath: file.appendingPathExtension(Self.completeSuffix).path)
     }
@@ -58,6 +63,11 @@ public struct RestoreImageCache: Sendable {
             return file
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let lock = try FileLock.acquire(lockFile, wait: true, holder: "parbake download")
+        defer { lock.release() }
+        if isComplete(file) {
+            return file
+        }
         try await download(url, file)
         do {
             try await verify(file)
@@ -75,6 +85,9 @@ public struct RestoreImageCache: Sendable {
     /// cache directory, and returns what it removed. Subdirectories and other files stay.
     @discardableResult
     public func prune(keeping kept: URL) throws -> [URL] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let lock = try FileLock.acquire(lockFile, wait: true, holder: "parbake prune")
+        defer { lock.release() }
         let keptNames: Set = [kept.lastPathComponent, kept.appendingPathExtension(Self.completeSuffix).lastPathComponent]
         let entries = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
         var removed: [URL] = []

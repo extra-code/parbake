@@ -19,7 +19,8 @@ extension ParbakeTool {
                 was at the save, one on a fresh overlay, and one with another machine identifier. \
                 For each it prints whether the restore worked and how long the agent took to answer. \
                 The bundle stays unchanged; the work directory is removed at the end.
-                """
+                """,
+            shouldDisplay: false
         )
 
         @Option(name: .long, help: "Provisioned bundle with the guest agent")
@@ -41,7 +42,7 @@ extension ParbakeTool {
             setvbuf(stdout, nil, _IOLBF, 0)
             let base = try MacOSVMBundle(url: URL(fileURLWithPath: bundle))
             guard base.agentVersion != nil else {
-                throw ValidationError("\(bundle) has no guest agent")
+                throw ParbakeError.runtime("\(bundle) has no guest agent")
             }
             let work = URL(fileURLWithPath: workDir)
             guard !FileManager.default.fileExists(atPath: work.path) else {

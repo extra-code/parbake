@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
+import ContainerizationError
 import Foundation
+import Synchronization
 import Testing
 
 @testable import RuntimeMacOS
@@ -88,14 +90,14 @@ struct RestoreImageCacheTests {
 
         #expect(Set(removed.map(\.lastPathComponent)) == ["old.ipsw", "old.ipsw.done", "partial.ipsw"])
         let left = try FileManager.default.contentsOfDirectory(atPath: cache.directory.path)
-        #expect(Set(left) == ["new.ipsw", "new.ipsw.done", "notes.txt", "keep.ipsw"])
+        #expect(Set(left) == [".lock", "new.ipsw", "new.ipsw.done", "notes.txt", "keep.ipsw"])
     }
 }
 
 struct BundleReplacementTests {
     private struct BuildFailed: Error {}
 
-    private func makeTarget() throws -> URL {
+    fileprivate func makeTarget() throws -> URL {
         let parent = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-replace-\(UUID())")
         let target = parent.appendingPathComponent("VM.bundle")
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
@@ -103,7 +105,7 @@ struct BundleReplacementTests {
         return target
     }
 
-    private func disk(of bundle: URL) throws -> String {
+    fileprivate func disk(of bundle: URL) throws -> String {
         String(decoding: try Data(contentsOf: bundle.appendingPathComponent("Disk.img")), as: UTF8.self)
     }
 
@@ -170,5 +172,93 @@ struct BundleReplacementTests {
         #expect(try disk(of: target) == "new")
         #expect(!FileManager.default.fileExists(atPath: staging.path))
         #expect(!FileManager.default.fileExists(atPath: BundleReplacement.retiredURL(for: target).path))
+    }
+}
+
+struct FileLockTests {
+    private func lockURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("parbake-lock-\(UUID()).parbake-lock")
+    }
+
+    @Test
+    func testASecondAcquireNamesThePathAndTheHolder() throws {
+        let url = lockURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let first = try FileLock.acquire(url, wait: false, holder: "parbake create")
+        defer { first.release() }
+
+        do {
+            _ = try FileLock.acquire(url, wait: false, holder: "parbake create")
+            Issue.record("a held lock was acquired twice")
+        } catch let failure as RuntimeFailure {
+            guard case .lockHeld(let path, let holder) = failure else {
+                Issue.record("unexpected failure \(failure)")
+                return
+            }
+            #expect(path == url.path)
+            #expect(holder?.contains("parbake create") == true)
+            #expect(holder?.contains("\(getpid())") == true)
+            #expect("\(failure)".contains(url.path))
+        }
+    }
+
+    @Test
+    func testAcquiringSucceedsAfterReleaseAndReleaseRepeats() throws {
+        let url = lockURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let first = try FileLock.acquire(url, wait: false, holder: "a")
+        first.release()
+        first.release()
+
+        let second = try FileLock.acquire(url, wait: false, holder: "b")
+        second.release()
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func testAWaitingAcquireTakesTheLockAfterTheHolderReleases() throws {
+        let url = lockURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let first = try FileLock.acquire(url, wait: false, holder: "a")
+        let started = DispatchSemaphore(value: 0)
+        let finished = DispatchSemaphore(value: 0)
+        let acquired = Mutex(false)
+        let waiter = Thread {
+            started.signal()
+            if let second = try? FileLock.acquire(url, wait: true, holder: "b") {
+                acquired.withLock { $0 = true }
+                second.release()
+            }
+            finished.signal()
+        }
+        waiter.start()
+        started.wait()
+        first.release()
+        finished.wait()
+        #expect(acquired.withLock { $0 })
+    }
+
+    @Test
+    func testDroppingTheLockReleasesIt() throws {
+        let url = lockURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            _ = try FileLock.acquire(url, wait: false, holder: "a")
+        }
+        try FileLock.acquire(url, wait: false, holder: "b").release()
+    }
+}
+
+extension BundleReplacementTests {
+    @Test
+    func testAnExistingTargetIsKeptWhenNotReplacing() async throws {
+        let target = try makeTarget()
+        defer { try? FileManager.default.removeItem(at: target.deletingLastPathComponent()) }
+
+        await #expect {
+            try await BundleReplacement.build(at: target, replacing: false) { _ in Issue.record("built over an existing bundle") }
+        } throws: { error in
+            (error as? ContainerizationError)?.code == .exists
+        }
+        #expect(try disk(of: target) == "old")
     }
 }

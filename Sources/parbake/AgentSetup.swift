@@ -10,12 +10,9 @@ import RuntimeMacOS
 enum AgentSetup {
     /// The agent executable at `path`, or the one built next to `parbake`.
     static func binary(at path: String?) throws -> Data {
-        let url =
-            path.map { URL(fileURLWithPath: $0) }
-            ?? URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-            .deletingLastPathComponent().appendingPathComponent("parbake-agent")
+        let url = ProvisionInputs.agentURL(path)
         guard let data = FileManager.default.contents(atPath: url.path) else {
-            throw ValidationError("no agent executable at \(url.path); pass --agent")
+            throw ParbakeError.runtime("no agent executable at \(url.path); pass --agent")
         }
         return data
     }
@@ -24,7 +21,7 @@ enum AgentSetup {
     static func stage(_ binary: Data, shell: GuestShell, address: String) throws {
         let result = shell.run(GuestAgentInstallation.stageCommand, on: address, input: binary)
         guard result.status == 0 else {
-            throw ValidationError("copying the agent into the guest failed: \(result.errorOutput)")
+            throw ParbakeError.runtime("copying the agent into the guest failed: \(LogText.sanitized(result.errorOutput))")
         }
     }
 
@@ -48,7 +45,7 @@ enum AgentSetup {
             try? await virtualMachine.requestStop()
             if await virtualMachine.wait(timeout: .seconds(60)) == nil {
                 try? await virtualMachine.forceStop()
-                throw ValidationError("the guest did not shut down; it was stopped forcibly and may need another boot")
+                throw ParbakeError.runtime("the guest did not shut down; it was stopped forcibly and may need another boot")
             }
         }
     }
@@ -58,19 +55,19 @@ enum AgentSetup {
     static func password(for username: String, keychainService: String?) throws -> String {
         if let keychainService {
             guard let password = try GuestCredentials(service: keychainService).password(for: username) else {
-                throw ValidationError("the keychain has no password for \(username) under \(keychainService)")
+                throw ParbakeError.runtime("the keychain has no password for \(username) under \(keychainService)")
             }
             return password
         }
         if isatty(STDIN_FILENO) != 0 {
             var buffer = [CChar](repeating: 0, count: 1024)
             guard let line = readpassphrase("Password for \(username): ", &buffer, buffer.count, 0) else {
-                throw ValidationError("failed to read the password")
+                throw ParbakeError.runtime("failed to read the password")
             }
             return String(cString: line)
         }
         guard let line = readLine(strippingNewline: true), !line.isEmpty else {
-            throw ValidationError("no password on standard input")
+            throw ParbakeError.runtime("no password on standard input")
         }
         return line
     }

@@ -65,23 +65,26 @@ extension ParbakeTool {
         @Option(name: .long, help: "Seconds to wait for the account to answer over SSH")
         var timeout: Int = 900
 
+        /// A password already read from standard input by `create`; not a command-line value.
+        var password: String?
+
         func run() async throws {
-            guard username.range(of: "^[a-z_][a-z0-9_-]*$", options: .regularExpression) != nil else {
-                throw ValidationError("the username must be lowercase letters, digits, '_' or '-'")
+            try ProvisionInputs.validate(
+                username: username, authorizedKeys: authorizedKey.map { URL(fileURLWithPath: $0) }, sudo: sudo, agent: agent,
+                noAgent: noAgent, scripts: [], keychain: keychain, keychainService: keychainService)
+            if keychain, KeychainAccess.for(.ofCurrentProcess()) == .anyApplication {
+                FileHandle.standardError.write(Data((GuestCredentials.adHocWarning + "\n").utf8))
             }
             let vmBundle = try MacOSVMBundle(url: URL(fileURLWithPath: bundle))
             guard !FileManager.default.fileExists(atPath: vmBundle.provisionedURL.path) else {
-                throw ValidationError("\(bundle) is already provisioned")
+                throw ParbakeError.runtime("\(bundle) is already provisioned")
             }
             var publicKeys = try authorizedKey.map { try Self.publicKey(at: URL(fileURLWithPath: $0)) }
-            for command in sudo {
-                try GuestPreparation.checkSudoCommand(command)
-            }
             let agentBinary = noAgent ? nil : try AgentSetup.binary(at: agent)
             let password =
                 try keychain
                 ? GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
-                : AgentSetup.password(for: username, keychainService: nil)
+                : self.password ?? AgentSetup.password(for: username, keychainService: nil)
 
             let provisioning = GuestProvisioning(fullName: fullName ?? username, username: username, password: password)
             let startOptions = try provisioning.startOptions()
@@ -110,7 +113,9 @@ extension ParbakeTool {
                     sudoCommands: sudo)
                 let result = ssh.run("/bin/bash -s", on: address, input: script)
                 guard result.output.contains(GuestPreparation.preparedMarker) else {
-                    throw ValidationError("preparing the account failed (ssh exit status \(result.status))")
+                    throw ParbakeError.runtime(
+                        "preparing the account failed (ssh exit status \(result.status)): "
+                            + LogText.sanitized(result.errorOutput))
                 }
                 print(
                     "Added \(publicKeys.count) public key(s), allowed \(username) to shut the guest down"
@@ -151,7 +156,7 @@ extension ParbakeTool {
                 try process.run()
                 process.waitUntilExit()
                 guard process.terminationStatus == 0 else {
-                    throw ValidationError("ssh-keygen failed to create \(url.path)")
+                    throw ParbakeError.runtime("ssh-keygen failed to create \(url.path)")
                 }
             }
             return try publicKey(at: url.appendingPathExtension("pub"))
@@ -160,16 +165,27 @@ extension ParbakeTool {
         /// Polls the DHCP leases and SSH until the account logs in, the guest stops, or the timeout passes.
         private func waitForAccount(virtualMachine: MacOSVirtualMachine, ssh: GuestShell) async throws -> String {
             let deadline = ContinuousClock.now + .seconds(timeout)
+            var leased: String?
+            var lastError = ""
             while ContinuousClock.now < deadline {
                 if let exit = virtualMachine.currentExit {
-                    throw ValidationError("the guest stopped during provisioning with exit code \(exit.exitCode)")
+                    throw ParbakeError.runtime("the guest stopped during provisioning with exit code \(exit.exitCode)")
                 }
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress), ssh.run("true", on: address).status == 0 {
-                    return address
+                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
+                    leased = address
+                    let result = ssh.run("true", on: address)
+                    if result.status == 0 { return address }
+                    lastError = LogText.sanitized(result.errorOutput)
                 }
                 try await Task.sleep(for: .seconds(5))
             }
-            throw ValidationError("the account did not answer over SSH within \(timeout) seconds")
+            if let leased {
+                if !lastError.isEmpty {
+                    FileHandle.standardError.write(Data("Last ssh error: \(lastError)\n".utf8))
+                }
+                throw ParbakeError.failure(.sshTimeout(username: ssh.username, address: leased, seconds: timeout))
+            }
+            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
         }
     }
 }

@@ -29,11 +29,14 @@ extension ParbakeTool {
 
         func run() async throws {
             let restoreImageURL = URL(fileURLWithPath: restoreImage)
+            guard FileManager.default.fileExists(atPath: restoreImageURL.path) else {
+                throw RuntimeFailure.restoreImageMissing(path: restoreImageURL.path)
+            }
             let restoreImage = try await VZMacOSRestoreImage.image(from: restoreImageURL)
             guard let requirements = restoreImage.mostFeaturefulSupportedConfiguration,
                 requirements.hardwareModel.isSupported
             else {
-                throw ValidationError("this host cannot run macOS \(restoreImage.operatingSystemVersion.string)")
+                throw ParbakeError.runtime("this host cannot run macOS \(restoreImage.operatingSystemVersion.string)")
             }
 
             print("Creating \(bundle) with an ASIF disk for macOS \(restoreImage.operatingSystemVersion.string) (\(restoreImage.buildVersion))")

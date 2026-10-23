@@ -49,7 +49,7 @@ extension ParbakeTool {
             setvbuf(stdout, nil, _IOLBF, 0)
             let baseBundle = try MacOSVMBundle(url: URL(fileURLWithPath: base ?? ParbakeHome().defaultBundle.path))
             guard baseBundle.agentVersion != nil else {
-                throw ValidationError("\(baseBundle.url.path) has no guest agent; run parbake agent install first")
+                throw ParbakeError.runtime("\(baseBundle.url.path) has no guest agent; run parbake agent install first")
             }
             let scriptURL = URL(fileURLWithPath: script)
             let target = URL(fileURLWithPath: bundle)

@@ -51,7 +51,7 @@ extension ParbakeTool.Agent {
             setvbuf(stdout, nil, _IOLBF, 0)
             let vmBundle = try MacOSVMBundle(url: URL(fileURLWithPath: bundle))
             guard let username = vmBundle.provisionedUsername, let shell = vmBundle.guestShell else {
-                throw ValidationError("\(bundle) has no Provisioned account or GuestKey; run provision first")
+                throw ParbakeError.runtime("\(bundle) has no Provisioned account or GuestKey; run provision first")
             }
             let binary = try AgentSetup.binary(at: agent)
             let password = try AgentSetup.password(for: username, keychainService: keychain ? keychainService : nil)
@@ -65,9 +65,9 @@ extension ParbakeTool.Agent {
                 try AgentSetup.stage(binary, shell: shell, address: address)
                 let result = shell.run("/bin/bash -s", on: address, input: try GuestAgentInstallation.script(password: password))
                 guard result.output.contains(GuestAgentInstallation.installedMarker) else {
-                    throw ValidationError(
+                    throw ParbakeError.runtime(
                         "installing the agent failed (ssh exit status \(result.status)): "
-                            + result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+                            + LogText.sanitized(result.errorOutput))
                 }
                 print("Installed the agent as the LaunchDaemon \(GuestAgentInstallation.label)")
                 if try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
@@ -84,16 +84,21 @@ extension ParbakeTool.Agent {
 
         private func waitForSSH(_ virtualMachine: MacOSVirtualMachine, shell: GuestShell) async throws -> String {
             let deadline = ContinuousClock.now + .seconds(timeout)
+            var leased: String?
             while ContinuousClock.now < deadline {
                 if let exit = virtualMachine.currentExit {
-                    throw ValidationError("the guest stopped with exit code \(exit.exitCode)")
+                    throw ParbakeError.runtime("the guest stopped with exit code \(exit.exitCode)")
                 }
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress), shell.run("true", on: address).status == 0 {
-                    return address
+                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
+                    leased = address
+                    if shell.run("true", on: address).status == 0 { return address }
                 }
                 try await Task.sleep(for: .seconds(3))
             }
-            throw ValidationError("the guest did not answer over SSH within \(timeout) seconds")
+            if let leased {
+                throw ParbakeError.failure(.sshTimeout(username: shell.username, address: leased, seconds: timeout))
+            }
+            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
         }
     }
 }

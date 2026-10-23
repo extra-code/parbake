@@ -92,6 +92,9 @@ extension ParbakeTool {
         @Flag(name: .long, help: "Without --username, skip the Setup Assistant window")
         var noSetup = false
 
+        /// The password read from standard input before the download; not a command-line value.
+        var stdinPassword: String?
+
         func run() async throws {
             setvbuf(stdout, nil, _IOLBF, 0)
             var resolved = self
@@ -99,6 +102,9 @@ extension ParbakeTool {
                 try resolved.apply(BundleConfiguration.load(from: URL(fileURLWithPath: config)))
             }
             try resolved.validateScripts()
+            try resolved.validateAccount()
+            try resolved.validateRestoreImage()
+            resolved.stdinPassword = try resolved.readStdinPassword()
             try await resolved.create()
         }
 
@@ -137,14 +143,50 @@ extension ParbakeTool {
             }
         }
 
+        /// A restore image given as a path must exist before the lock and the download.
+        func validateRestoreImage() throws {
+            guard let restoreImage, case .file(let file) = try RestoreImageSource(restoreImage) else { return }
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                throw RuntimeFailure.restoreImageMissing(path: file.path)
+            }
+        }
+
+        /// The account password from standard input when it is piped, read before the download so
+        /// that a missing password fails early. A terminal is prompted later; the keychain has its own path.
+        func readStdinPassword(
+            isTerminal: Bool = isatty(STDIN_FILENO) != 0,
+            read: () throws -> String = {
+                try AgentSetup.password(for: "", keychainService: nil)
+            }
+        ) throws -> String? {
+            guard username != nil, !keychain, !isTerminal else { return nil }
+            return try read()
+        }
+
+        /// Checks the account inputs before anything is downloaded.
+        func validateAccount() throws {
+            guard let username else {
+                try ProvisionInputs.checkAccountFlags(
+                    username: nil, authorizedKeys: authorizedKey, sudo: sudo, keychain: keychain, fullName: fullName, tidy: tidy)
+                return
+            }
+            try ProvisionInputs.validate(
+                username: username, authorizedKeys: authorizedKey.map { URL(fileURLWithPath: $0) }, sudo: sudo, agent: agent,
+                noAgent: noAgent, scripts: script.map { URL(fileURLWithPath: $0) }, keychain: keychain, keychainService: keychainService)
+        }
+
         private func create() async throws {
             let home = ParbakeHome()
             let target = URL(fileURLWithPath: bundle ?? home.defaultBundle.path)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let lock = try FileLock.acquire(
+                target.deletingLastPathComponent().appendingPathComponent(target.lastPathComponent + ".parbake-lock"), wait: false,
+                holder: "parbake create")
+            defer { lock.release() }
             let replacing = replace && FileManager.default.fileExists(atPath: target.path)
             guard replace || !FileManager.default.fileExists(atPath: target.path) else {
                 throw ValidationError("\(target.path) already exists; pass --replace to rebuild it")
             }
-            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             if replacing {
                 try checkFreeSpace(toReplace: target)
                 print(
@@ -206,7 +248,8 @@ extension ParbakeTool {
                 arguments += tidy ? ["--tidy"] : []
                 arguments += agent.map { ["--agent", $0] } ?? []
                 arguments += noAgent ? ["--no-agent"] : []
-                let provision = try Provision.parse(arguments)
+                var provision = try Provision.parse(arguments)
+                provision.password = stdinPassword
                 try await provision.run()
                 if !script.isEmpty {
                     print("==> Running \(script.count) script(s) in the guest")
@@ -234,7 +277,7 @@ extension ParbakeTool {
                 return
             }
             let format = ByteCountFormatter()
-            throw ValidationError(
+            throw ParbakeError.runtime(
                 "rebuilding \(target.path) needs \(format.string(fromByteCount: needed)) beside it, "
                     + "the size of the existing bundle; \(format.string(fromByteCount: available)) is free")
         }
