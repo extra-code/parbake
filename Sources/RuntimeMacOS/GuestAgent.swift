@@ -7,6 +7,7 @@ import ContainerizationOCI
 import Foundation
 import GRPCCore
 import NIOPosix
+import ParbakeVersion
 
 /// The runtime's side of the guest agent: readiness, and the processes the agent runs in the guest
 /// with their standard streams copied to and from the host's file handles.
@@ -14,10 +15,6 @@ import NIOPosix
 /// The agent speaks containerization's SandboxContext protocol on vsock port 1024; see
 /// `docs/specs/spec_guest_agent.md`.
 public actor GuestAgent {
-    /// The wire protocol this runtime speaks; the first field of the agent's version line.
-    public static let protocolVersion = 1
-    /// The agent environment variable whose value is the agent's version line.
-    public static let versionVariable = "CONTAINER_RUNTIME_MACOS_AGENT"
     /// The first host vsock port for process streams.
     static let firstStreamPort: UInt32 = 0x1000_0000
     /// How long the agent gets to connect a process's streams after it started the process.
@@ -28,7 +25,7 @@ public actor GuestAgent {
         public let agentVersion: String
 
         public var description: String {
-            "the guest agent reports version \"\(agentVersion)\", this runtime speaks protocol \(GuestAgent.protocolVersion); "
+            "the guest agent reports version \"\(agentVersion)\", this runtime speaks protocol \(AgentVersionLine.protocolVersion); "
                 + "update the agent with parbake agent install"
         }
     }
@@ -53,10 +50,9 @@ public actor GuestAgent {
         self.virtualMachine = virtualMachine
     }
 
-    /// Returns the protocol number of an agent version line such as `1 0.52.0`, or nil when the
-    /// line has none.
-    public static func protocolNumber(of version: String) -> Int? {
-        version.split(separator: " ", omittingEmptySubsequences: false).first.flatMap { Int($0) }
+    /// Whether an agent version line such as `1 0.52.0` names the protocol this runtime speaks.
+    static func speaksProtocol(_ version: String) -> Bool {
+        AgentVersionLine(version)?.protocolNumber == AgentVersionLine.protocolVersion
     }
 
     /// Darwin's signal numbers by name; several differ from Linux, SIGUSR1 is 30 and not 10.
@@ -84,27 +80,25 @@ public actor GuestAgent {
     /// Dials the agent once a second until it answers with this runtime's protocol and returns its
     /// version line.
     ///
-    /// Throws `VersionMismatch` at once for an agent with another protocol, and a timeout error
-    /// when no agent answers within `timeout`.
+    /// Throws `VersionMismatch` at once for an agent with another protocol, and
+    /// `RuntimeFailure.agentTimeout` with no label when no agent answers within `timeout`.
     public func waitUntilReady(timeout: Duration) async throws -> String {
         let deadline = ContinuousClock.now + timeout
-        var lastError: (any Error)?
         while ContinuousClock.now < deadline {
             do {
-                let version = try await call { try await $0.getenv(key: Self.versionVariable) }
-                guard Self.protocolNumber(of: version) == Self.protocolVersion else {
+                let version = try await call { try await $0.getenv(key: AgentVersionLine.variable) }
+                guard Self.speaksProtocol(version) else {
                     throw VersionMismatch(agentVersion: version)
                 }
                 return version
             } catch let error as VersionMismatch {
                 throw error
             } catch {
-                lastError = error
+                // The agent is not up yet; dial again.
             }
             try await Task.sleep(for: .seconds(1))
         }
-        throw ContainerizationError(
-            .timeout, message: "the guest agent did not answer within \(timeout)", cause: lastError)
+        throw RuntimeFailure.agentTimeout(seconds: Int(timeout.components.seconds), label: nil)
     }
 
     /// Records a process in the agent; `stdio` are the caller's standard input, output and error,

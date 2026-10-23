@@ -28,10 +28,29 @@ extension RuntimeMacOSHelper {
 
         var logRoot = LogRoot.path
 
+        /// Sends every message to the unified log and, when `logPath` is set, also to that file.
+        static func bootstrapLogging(uuid: String, debug: Bool, logPath: FilePath?) -> Logger {
+            let fileHandler = logPath.flatMap { try? FileLogHandler(label: "com.apple.container", category: "RuntimeMacOSHelper", path: $0) }
+            LoggingSystem.bootstrap { _ in
+                var handlers: [any LogHandler] = [OSLogHandler(category: "runtime")]
+                if let fileHandler {
+                    handlers.insert(fileHandler, at: 0)
+                }
+                return MultiplexLogHandler(handlers)
+            }
+            var log = Logger(label: "com.apple.container")
+            log.logLevel = debug ? .debug : .info
+            log[metadataKey: "uuid"] = "\(uuid)"
+            if let logPath, fileHandler == nil {
+                log.error("unable to open the log file, logging to the unified log only", metadata: ["logPath": "\(logPath)"])
+            }
+            return log
+        }
+
         func run() async throws {
             let commandName = RuntimeMacOSHelper._commandName
             let logPath = logRoot.map { $0.appending("\(commandName)-\(uuid).log") }
-            let log = ServiceLogger.bootstrap(category: "RuntimeMacOSHelper", metadata: ["uuid": "\(uuid)"], debug: debug, logPath: logPath)
+            let log = Self.bootstrapLogging(uuid: uuid, debug: debug, logPath: logPath)
             log.info("starting helper", metadata: ["name": "\(commandName)"])
             defer {
                 log.info("stopping helper", metadata: ["name": "\(commandName)"])

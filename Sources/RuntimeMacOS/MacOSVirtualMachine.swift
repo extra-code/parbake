@@ -46,6 +46,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     private let virtualMachine: VZVirtualMachine
     /// The MAC address of the guest's network device, which names its DHCP lease.
     public let macAddress: String
+    private let auxiliaryStoragePath: String
     private let lock = NSLock()
     private var exit: GuestExit?
     private var waiters: [CheckedContinuation<GuestExit, Never>] = []
@@ -53,6 +54,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     public init(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64, network: GuestNetwork? = nil) throws {
         let configuration = try Self.configuration(bundle: bundle, cpus: cpus, memoryInBytes: memoryInBytes, network: network)
         self.macAddress = configuration.networkDevices.first?.macAddress.string ?? ""
+        self.auxiliaryStoragePath = bundle.auxiliaryStorageURL.path
         let queue = DispatchQueue(label: "container-runtime-macos.vm")
         self.queue = queue
         self.virtualMachine = queue.sync { VZVirtualMachine(configuration: configuration, queue: queue) }
@@ -132,7 +134,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     /// Boots the guest.
     ///
     /// Virtualization.framework runs at most two macOS guests per host; a start beyond that fails
-    /// with an error that says so.
+    /// with `RuntimeFailure.vmLimitReached`.
     public func start() async throws {
         do {
             try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
@@ -142,17 +144,16 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
                     }
                 }
             }
-        } catch let error as VZError where error.code == .virtualMachineLimitExceeded {
-            throw ContainerizationError(
-                .unsupported, message: "this host already runs the two macOS guests Virtualization.framework allows; stop one first",
-                cause: error)
+        } catch {
+            throw Self.mapStartError(error)
         }
     }
 
     /// Boots the guest with `options`.
     ///
     /// Retries for up to `lockTimeout` while another process, such as the installer that has
-    /// just exited, still holds the lock on the auxiliary storage.
+    /// just exited, still holds the lock on the auxiliary storage, then throws
+    /// `RuntimeFailure.lockHeld`. The guest limit fails at once with `RuntimeFailure.vmLimitReached`.
     public func start(options: VZMacOSVirtualMachineStartOptions, lockTimeout: Duration = .seconds(30)) async throws {
         // The options are read only on the virtual machine's queue.
         nonisolated(unsafe) let options = options
@@ -171,23 +172,42 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
                     }
                 }
                 return
-            } catch  where Self.isLockContention(error) && ContinuousClock.now < deadline {
+            } catch {
+                let mapped = Self.mapStartError(error)
+                guard Self.isLockContention(mapped) else {
+                    throw mapped
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw RuntimeFailure.lockHeld(path: auxiliaryStoragePath, holder: nil)
+                }
                 try await Task.sleep(for: .seconds(2))
             }
         }
     }
 
+    /// Maps a start failure to the error the runtime reports: the guest limit, at the top or as a
+    /// wrapped error, becomes `RuntimeFailure.vmLimitReached`; any other error is returned as is.
+    static func mapStartError(_ error: any Error) -> any Error {
+        let isLimit = errorChain(error).contains { $0.domain == VZError.errorDomain && $0.code == VZError.Code.virtualMachineLimitExceeded.rawValue }
+        return isLimit ? RuntimeFailure.vmLimitReached : error
+    }
+
     /// Whether `error`, or an error it wraps, is a POSIX `EAGAIN`, which is how
     /// Virtualization.framework reports an auxiliary storage that another process holds.
     static func isLockContention(_ error: any Error) -> Bool {
+        errorChain(error).contains { $0.domain == NSPOSIXErrorDomain && $0.code == Int(EAGAIN) }
+    }
+
+    /// `error` followed by the errors it wraps through `NSUnderlyingErrorKey`, each at most once.
+    private static func errorChain(_ error: any Error) -> [NSError] {
+        var chain: [NSError] = []
+        var seen = Set<ObjectIdentifier>()
         var current: NSError? = error as NSError
-        while let nsError = current {
-            if nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(EAGAIN) {
-                return true
-            }
+        while let nsError = current, seen.insert(ObjectIdentifier(nsError)).inserted {
+            chain.append(nsError)
             current = nsError.userInfo[NSUnderlyingErrorKey] as? NSError
         }
-        return false
+        return chain
     }
 
     /// Installs macOS from the restore image at `restoreImageURL` onto the guest's disk.
@@ -315,10 +335,15 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Asks the guest to shut down, like a press of the power button.
+    /// Asks the guest to shut down, like a press of the power button. A guest that already stopped
+    /// has nothing to stop, so the request returns without error.
     public func requestStop() async throws {
         try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
             queue.async {
+                guard self.virtualMachine.canRequestStop else {
+                    cc.resume()
+                    return
+                }
                 do {
                     try self.virtualMachine.requestStop()
                     cc.resume()

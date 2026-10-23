@@ -9,6 +9,7 @@ import ContainerizationError
 import ContainerizationOCI
 import Foundation
 import Logging
+import ParbakeVersion
 import RuntimeMacOS
 import Virtualization
 import vmnet
@@ -38,8 +39,8 @@ actor RuntimeService {
     static let vmDirectoryName = "vm"
     /// The least time a guest gets to finish a shutdown it accepted over SSH.
     static let minimumShutdownTimeout: Duration = .seconds(60)
-    /// How long a wait whose process was lost waits for the guest to report that it stopped.
-    static let guestLossTimeout: Duration = .seconds(5)
+    /// The longest a shutdown over SSH may take before ssh is terminated.
+    static let maximumSSHShutdownTimeout: Duration = .seconds(60)
 
     enum State {
         case created
@@ -93,6 +94,13 @@ actor RuntimeService {
         guard let configuration = runtimeConfiguration.containerConfiguration else {
             throw ContainerizationError(.invalidArgument, message: "runtime configuration is missing the container configuration")
         }
+        if let refusal = RuntimeLifecycle.unsupportedInputs(
+            mounts: configuration.mounts.count,
+            publishedPorts: configuration.publishedPorts.count,
+            publishedSockets: configuration.publishedSockets.count
+        ) {
+            throw ContainerizationError(.unsupported, message: refusal)
+        }
         guard let source = configuration.labels[Self.bundleLabel] else {
             throw ContainerizationError(
                 .invalidArgument,
@@ -118,11 +126,18 @@ actor RuntimeService {
         }
 
         let vmDirectory = root.appendingPathComponent(Self.vmDirectoryName)
-        let sourceBundle = try MacOSVMBundle(url: URL(fileURLWithPath: source))
-        let bundle =
-            FileManager.default.fileExists(atPath: vmDirectory.path)
-            ? try MacOSVMBundle(url: vmDirectory)
-            : try sourceBundle.instance(at: vmDirectory)
+        let sourceBundle: MacOSVMBundle
+        let bundle: MacOSVMBundle
+        do {
+            let sourceURL = try BundlePathPolicy(home: FileManager.default.homeDirectoryForCurrentUser).validate(source)
+            sourceBundle = try MacOSVMBundle(url: sourceURL)
+            bundle =
+                FileManager.default.fileExists(atPath: vmDirectory.path)
+                ? try MacOSVMBundle(url: vmDirectory)
+                : try sourceBundle.instance(at: vmDirectory)
+        } catch {
+            throw RuntimeLifecycle.containerizationError(from: error)
+        }
 
         let network = try await allocateNetwork(message, configuration: configuration)
         let virtualMachine: MacOSVirtualMachine
@@ -152,14 +167,14 @@ actor RuntimeService {
             }
         } catch {
             releaseNetwork()
-            throw error
+            throw RuntimeLifecycle.containerizationError(from: error)
         }
         self.configuration = configuration
         self.virtualMachine = virtualMachine
         self.bundle = bundle
         self.readinessTimeout = readinessTimeout
         self.state = .prepared
-        log.info("prepared macOS guest", metadata: ["bundle": "\(bundle.url.path)", "source": "\(source)"])
+        log.info("prepared macOS guest", metadata: ["bundle": "\(bundle.url.path)", "source": "\(sourceBundle.url.path)"])
         return message.reply()
     }
 
@@ -182,7 +197,11 @@ actor RuntimeService {
             throw ContainerizationError(.invalidState, message: "cannot start: container is \(state)")
         }
 
-        try await virtualMachine.start()
+        do {
+            try await virtualMachine.start()
+        } catch {
+            throw RuntimeLifecycle.containerizationError(from: error)
+        }
         let agent = GuestAgent(virtualMachine: virtualMachine)
         self.agent = agent
         state = .running
@@ -198,6 +217,16 @@ actor RuntimeService {
             do {
                 let version = try await agent.waitUntilReady(timeout: readinessTimeout)
                 log.info("guest agent is ready", metadata: ["version": "\(version)", "installed": "\(installed)"])
+                if AgentVersionLine(version)?.release != Parbake.release {
+                    log.warning(
+                        "the guest agent's release differs from this runtime's; run `parbake agent install` to update the bundle's agent",
+                        metadata: ["version": "\(version)", "installed": "\(installed)", "release": "\(Parbake.release)"])
+                }
+            } catch RuntimeFailure.agentTimeout(let seconds, label: nil) {
+                log.error("guest agent is not ready, stopping the guest", metadata: ["seconds": "\(seconds)"])
+                try? await virtualMachine.forceStop()
+                throw RuntimeLifecycle.containerizationError(
+                    from: RuntimeFailure.agentTimeout(seconds: seconds, label: Self.readinessTimeoutLabel))
             } catch {
                 log.error("guest agent is not ready, stopping the guest", metadata: ["error": "\(error)"])
                 try? await virtualMachine.forceStop()
@@ -274,7 +303,8 @@ actor RuntimeService {
     }
 
     /// Sends a signal to a process through the guest agent; for the init process, stops the guest
-    /// forcibly on SIGKILL and shuts it down on any other signal.
+    /// forcibly on SIGKILL, also while a stop runs, and shuts it down on SIGTERM, SIGINT or SIGQUIT.
+    /// A missing signal counts as SIGTERM.
     @Sendable
     func kill(_ message: XPCMessage) async throws -> XPCMessage {
         let id = try message.id()
@@ -287,14 +317,21 @@ actor RuntimeService {
             try await runningAgent().signal(id: id, signal: number)
             return message.reply()
         }
-        guard state == .running else {
-            throw ContainerizationError(.invalidState, message: "cannot kill: container is not running")
-        }
+        let isRunning = state == .running
+        let isStopping = state == .stopping
+        let number = signal.isEmpty ? SIGTERM : GuestAgent.signalNumber(signal)
 
-        if Self.isKill(signal) {
+        switch RuntimeLifecycle.initSignalAction(signal: number, name: signal, isRunning: isRunning, isStopping: isStopping) {
+        case .forceStop:
             try await virtualMachine.forceStop()
-        } else if await !shutDown(virtualMachine) {
-            try await virtualMachine.requestStop()
+        case .shutDown:
+            if await !shutDown(virtualMachine, timeout: Self.maximumSSHShutdownTimeout) {
+                try await virtualMachine.requestStop()
+            }
+        case .alreadyStopping:
+            break
+        case .refuse(let reason):
+            throw ContainerizationError(RuntimeLifecycle.refusalCode(isRunning: isRunning, isStopping: isStopping), message: reason)
         }
         return message.reply()
     }
@@ -330,18 +367,16 @@ actor RuntimeService {
         return reply
     }
 
-    /// Returns the exit of a process run through the agent. When the guest stopped under the
-    /// process, the wait fails with the guest's stop, so the caller cannot take it for the
-    /// process's own exit code.
+    /// Returns the exit of a process run through the agent. When the agent's stream for the
+    /// process ends, the wait gives the guest `RuntimeLifecycle.guestLossTimeout` to stop and fails
+    /// with `.interrupted`, so the caller cannot take it for the process's own exit code.
     private func processExit(id: String, virtualMachine: MacOSVirtualMachine) async throws -> GuestExit {
         do {
             return try await runningAgent().wait(id: id)
-        } catch let error as GuestAgent.ProcessLost {
-            guard let guest = await virtualMachine.wait(timeout: Self.guestLossTimeout) else {
-                throw error
-            }
+        } catch is GuestAgent.ProcessLost {
+            let guest = await virtualMachine.wait(timeout: RuntimeLifecycle.guestLossTimeout)
             throw ContainerizationError(
-                .interrupted, message: "the macOS guest stopped with exit code \(guest.exitCode) while process \(id) ran; the process has no exit code")
+                .interrupted, message: RuntimeLifecycle.lostProcessMessage(processID: id, guestExitCode: guest?.exitCode))
         }
     }
 
@@ -453,10 +488,13 @@ actor RuntimeService {
     /// Shuts the guest down through the agent or over SSH, or asks it to shut down like a press of
     /// the power button when neither is available, and stops it forcibly once the timeout passes.
     ///
-    /// A shutdown the guest accepted gets at least `minimumShutdownTimeout`.
+    /// A shutdown the guest accepted gets at least `minimumShutdownTimeout`. The shutdown request
+    /// itself gets `min(timeout, maximumSSHShutdownTimeout)`: `container stop` passes 5 s by default, so
+    /// the request ends after 5 s, and a stop timeout too short for the request falls back to the
+    /// power-button request before the guest is stopped forcibly.
     private func stopGuest(_ virtualMachine: MacOSVirtualMachine, timeout: Duration) async throws {
         var timeout = timeout
-        if await shutDown(virtualMachine) {
+        if await shutDown(virtualMachine, timeout: min(timeout, Self.maximumSSHShutdownTimeout)) {
             timeout = max(timeout, Self.minimumShutdownTimeout)
         } else {
             do {
@@ -472,12 +510,12 @@ actor RuntimeService {
     }
 
     /// Runs `shutdown -h now` in the guest through the agent, then over SSH; returns whether the
-    /// guest accepted it.
-    private func shutDown(_ virtualMachine: MacOSVirtualMachine) async -> Bool {
+    /// guest accepted it. The SSH attempt ends after `timeout`.
+    private func shutDown(_ virtualMachine: MacOSVirtualMachine, timeout: Duration) async -> Bool {
         if await shutDownThroughAgent() {
             return true
         }
-        return shutDownOverSSH(virtualMachine)
+        return await shutDownOverSSH(virtualMachine, timeout: timeout)
     }
 
     /// Runs `shutdown -h now` as root through the agent, or with the provisioned account's
@@ -494,8 +532,11 @@ actor RuntimeService {
     }
 
     /// Runs `shutdown -h now` in the guest with the provisioned account and the guest key;
-    /// returns whether the guest accepted it.
-    private func shutDownOverSSH(_ virtualMachine: MacOSVirtualMachine) -> Bool {
+    /// returns whether the guest accepted it, or true when the guest stopped meanwhile.
+    ///
+    /// ssh runs in a detached task, so the other routes stay answerable while it runs; ssh is
+    /// terminated after `timeout`.
+    private func shutDownOverSSH(_ virtualMachine: MacOSVirtualMachine, timeout: Duration) async -> Bool {
         guard let shell = bundle?.guestShell else {
             log.info("bundle has no guest key, asking the guest to shut down")
             return false
@@ -506,15 +547,21 @@ actor RuntimeService {
         }
         let accepted = "parbake: shutting down"
         // shutdown ends sshd, so the guest reports the acceptance before it runs shutdown.
-        let result = shell.run(
-            "sudo -n -l /sbin/shutdown >/dev/null && echo '\(accepted)' && sudo -n /sbin/shutdown -h now >/dev/null",
-            on: address)
+        let command = "sudo -n -l /sbin/shutdown >/dev/null && echo '\(accepted)' && sudo -n /sbin/shutdown -h now >/dev/null"
+        // GuestShell.run blocks its thread; on the actor it would stall state, wait and kill until ssh ends.
+        let result = await Task.detached {
+            shell.run(command, on: address, timeout: timeout)
+        }.value
+        guard state == .running || state == .stopping, self.virtualMachine === virtualMachine else {
+            log.info("guest stopped while the shutdown over SSH ran")
+            return true
+        }
         guard result.output.contains(accepted) else {
             log.warning(
                 "guest refused the shutdown over SSH",
                 metadata: [
-                    "address": "\(address)", "status": "\(result.status)",
-                    "error": "\(result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))",
+                    "address": "\(address)", "status": "\(result.status)", "timedOut": "\(result.timedOut)",
+                    "error": "\(LogText.sanitized(result.errorOutput))",
                 ])
             return false
         }
@@ -528,9 +575,5 @@ actor RuntimeService {
         if state == .running || state == .stopping {
             state = .stopped
         }
-    }
-
-    static func isKill(_ signal: String) -> Bool {
-        ["SIGKILL", "KILL", "9"].contains(signal.uppercased())
     }
 }

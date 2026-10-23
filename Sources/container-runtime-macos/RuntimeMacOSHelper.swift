@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import ArgumentParser
+import ParbakeVersion
 
 @main
 struct RuntimeMacOSHelper: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "container-runtime-macos",
         abstract: "XPC Service for managing a macOS sandbox",
-        version: "0.1.0",
+        version: Parbake.release,
         subcommands: [
             Start.self
         ]

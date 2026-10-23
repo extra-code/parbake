@@ -3,19 +3,27 @@
 
 import ContainerizationOCI
 import Darwin
+import ParbakeVersion
 import Testing
 
 @testable import RuntimeMacOS
 
 struct GuestAgentTests {
-    @Test(arguments: ["1", "1 0.52.0"])
-    func testReadsTheProtocolNumber(version: String) {
-        #expect(GuestAgent.protocolNumber(of: version) == 1)
+    @Test(arguments: ["1", "1 0.52.0", "\(AgentVersionLine.current)"])
+    func testAcceptsAVersionLineWithThisProtocol(version: String) {
+        #expect(GuestAgent.speaksProtocol(version))
     }
 
-    @Test(arguments: ["", "agent", " 1"])
-    func testAVersionWithoutAProtocolNumberHasNone(version: String) {
-        #expect(GuestAgent.protocolNumber(of: version) == nil)
+    @Test(arguments: ["", "agent", "2 0.1.0", "0", "-1"])
+    func testRejectsAVersionLineWithAnotherOrNoProtocol(version: String) {
+        #expect(!GuestAgent.speaksProtocol(version))
+    }
+
+    @Test
+    func testAVersionMismatchNamesTheProtocolThisRuntimeSpeaks() {
+        let description = GuestAgent.VersionMismatch(agentVersion: "2 0.1.0").description
+        #expect(description.contains("protocol \(AgentVersionLine.protocolVersion)"))
+        #expect(description.contains("\"2 0.1.0\""))
     }
 
     @Test
