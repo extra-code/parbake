@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 public enum Parbake {
-    /// The release of this checkout; both CLIs and the agent report it.
-    public static let release = "0.1.0"
+    /// The release of this build; both CLIs and the agent report it. `scripts/release.sh` stamps the marked line.
+    public static let release = "0.0.0-dev"  // STAMP:release
 }
 
 /// The agent's version line: `<protocol>` followed by optional informational fields.

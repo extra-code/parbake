@@ -118,6 +118,7 @@ tasks:
       - task: lint:sh
       - task: lint:reuse
       - task: lint:boundaries
+      - task: lint:release
 
   lint:reuse:
     cmds:
@@ -136,6 +137,32 @@ tasks:
     cmds:
       - scripts/lint-boundaries.sh --self-test
       - scripts/lint-boundaries.sh
+
+  lint:release:
+    cmds:
+      - scripts/release.sh --self-test
+
+  release:build:
+    desc: >-
+      Build, sign and verify a tagged release in a sibling worktree: task release:build VERSION=X.Y.Z.
+      Needs vX.Y.Z or HEAD on main; CODESIGN_IDENTITY and PARBAKE_CODESIGN_IDENTITY pass through;
+      RELEASE_ALLOW_NON_MAIN=1 skips the main check for a local dry run. Binaries land in .build/release-assets/X.Y.Z/
+    preconditions:
+      - sh: test -n "{{.VERSION}}"
+        msg: "VERSION is required: task release:build VERSION=X.Y.Z"
+    env:
+      CODESIGN_IDENTITY: "{{.CODESIGN_IDENTITY}}"
+      PARBAKE_CODESIGN_IDENTITY: "{{.PARBAKE_CODESIGN_IDENTITY}}"
+    cmds:
+      - scripts/release.sh build "{{.VERSION}}"
+
+  release:notes:
+    desc: >-
+      Write .build/release-assets/changelog.md with git-cliff: the release of the latest vX.Y.Z tag
+      (the tag at HEAD in CI); with no tag, every commit under Unreleased
+    cmds:
+      - mkdir -p .build/release-assets
+      - ocx exec -g release -- git-cliff --config cliff.toml --latest --output .build/release-assets/changelog.md
 
   check:
     desc: Lint, build, sign and test — the full local gate
