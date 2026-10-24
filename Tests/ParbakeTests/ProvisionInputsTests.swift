@@ -25,29 +25,29 @@ struct ProvisionInputsTests {
     private func validate(
         username: String = "ci", keys: [URL] = [], sudo: [String] = [], agent: String? = nil, noAgent: Bool = true, scripts: [URL] = [],
         keychain: Bool = false, preflight: @escaping (String) throws -> Void = { _ in }
-    ) throws {
-        try ProvisionInputs.validate(
+    ) async throws {
+        try await ProvisionInputs.validate(
             username: username, authorizedKeys: keys, sudo: sudo, agent: agent, noAgent: noAgent, scripts: scripts, keychain: keychain,
             keychainService: "svc", keychainPreflight: preflight)
     }
 
     @Test
-    func testValidInputsPass() throws {
+    func testValidInputsPass() async throws {
         let key = try file("k.pub", "ssh-ed25519 AAAA one\n")
         let script = try file("s.sh", "true\n")
         let agent = try file("agent", "bin")
-        try validate(keys: [key], sudo: ["/usr/sbin/softwareupdate"], agent: agent.path, noAgent: false, scripts: [script])
+        try await validate(keys: [key], sudo: ["/usr/sbin/softwareupdate"], agent: agent.path, noAgent: false, scripts: [script])
     }
 
     @Test(arguments: ["Runner", "ci;id", "-l", "", "ci\n"])
-    func testRefusesABadUsername(name: String) {
-        #expect(throws: ValidationError.self) { try validate(username: name) }
+    func testRefusesABadUsername(name: String) async {
+        await #expect(throws: ValidationError.self) { try await validate(username: name) }
     }
 
     @Test
-    func testAnInvalidUsernameNamesTheRule() {
+    func testAnInvalidUsernameNamesTheRule() async {
         do {
-            try validate(username: "Runner")
+            try await validate(username: "Runner")
             Issue.record("expected a throw")
         } catch {
             #expect("\(error)".contains(GuestUsername.rule))
@@ -55,25 +55,25 @@ struct ProvisionInputsTests {
     }
 
     @Test
-    func testRefusesAKeyFileThatIsMissingMultiLineOrHostile() throws {
+    func testRefusesAKeyFileThatIsMissingMultiLineOrHostile() async throws {
         let missing = directory.appendingPathComponent("nope.pub")
         let multi = try file("m.pub", "a\nb\n")
         let control = try file("c.pub", "ssh-ed25519 AA\u{1}A\n")
         let marker = try file("p.pub", "ssh-ed25519 PARBAKE_X\n")
         for key in [missing, multi, control, marker] {
-            #expect(throws: ValidationError.self, "\(key.lastPathComponent)") { try validate(keys: [key]) }
+            await #expect(throws: ValidationError.self, "\(key.lastPathComponent)") { try await validate(keys: [key]) }
         }
     }
 
     @Test(arguments: ["ALL", "/bin/sh -c x", "/usr/bin/*"])
-    func testRefusesABadSudoEntry(command: String) {
-        #expect(throws: ValidationError.self) { try validate(sudo: [command]) }
+    func testRefusesABadSudoEntry(command: String) async {
+        await #expect(throws: ValidationError.self) { try await validate(sudo: [command]) }
     }
 
     @Test
-    func testABadSudoEntryPrintsTheCodeAndQuotedMessage() {
+    func testABadSudoEntryPrintsTheCodeAndQuotedMessage() async {
         do {
-            try validate(sudo: ["ALL"])
+            try await validate(sudo: ["ALL"])
             Issue.record("expected a throw")
         } catch let error as ValidationError {
             #expect(
@@ -86,10 +86,10 @@ struct ProvisionInputsTests {
     }
 
     @Test
-    func testAHostileKeyPrintsTheCodeAndQuotedMessage() throws {
+    func testAHostileKeyPrintsTheCodeAndQuotedMessage() async throws {
         let key = try file("p.pub", "ssh-ed25519 PARBAKE_X\n")
         do {
-            try validate(keys: [key])
+            try await validate(keys: [key])
             Issue.record("expected a throw")
         } catch let error as ValidationError {
             #expect(error.message == "invalidArgument: \"public key in \(key.path) must not contain the text PARBAKE_\"")
@@ -99,28 +99,28 @@ struct ProvisionInputsTests {
     }
 
     @Test
-    func testRefusesAMissingAgentBinary() {
+    func testRefusesAMissingAgentBinary() async {
         let missing = directory.appendingPathComponent("no-agent").path
-        #expect(throws: ValidationError.self) { try validate(agent: missing, noAgent: false) }
+        await #expect(throws: ValidationError.self) { try await validate(agent: missing, noAgent: false) }
     }
 
     @Test
-    func testAgentWithNoAgentConflicts() throws {
+    func testAgentWithNoAgentConflicts() async throws {
         let agent = try file("agent", "bin")
-        #expect(throws: ValidationError.self) { try validate(agent: agent.path, noAgent: true) }
+        await #expect(throws: ValidationError.self) { try await validate(agent: agent.path, noAgent: true) }
     }
 
     @Test
-    func testRefusesAnUnreadableScript() {
+    func testRefusesAnUnreadableScript() async {
         let missing = directory.appendingPathComponent("gone.sh")
-        #expect(throws: ValidationError.self) { try validate(scripts: [missing]) }
+        await #expect(throws: ValidationError.self) { try await validate(scripts: [missing]) }
     }
 
     @Test
-    func testTheKeychainPreflightRunsWithTheService() {
+    func testTheKeychainPreflightRunsWithTheService() async {
         nonisolated(unsafe) var service: String?
-        #expect(throws: RuntimeFailure.keychainLocked(service: "svc")) {
-            try validate(
+        await #expect(throws: RuntimeFailure.keychainLocked(service: "svc")) {
+            try await validate(
                 keychain: true,
                 preflight: { name in
                     service = name
@@ -131,13 +131,13 @@ struct ProvisionInputsTests {
     }
 
     @Test
-    func testTheKeychainPreflightIsSkippedWithoutTheFlag() throws {
-        try validate(keychain: false, preflight: { _ in throw RuntimeFailure.keychainLocked(service: "x") })
+    func testTheKeychainPreflightIsSkippedWithoutTheFlag() async throws {
+        try await validate(keychain: false, preflight: { _ in throw RuntimeFailure.keychainLocked(service: "x") })
     }
 
     @Test
-    func testTheKeychainPreflightPassesWhenItSucceeds() throws {
-        try validate(keychain: true, preflight: { _ in })
+    func testTheKeychainPreflightPassesWhenItSucceeds() async throws {
+        try await validate(keychain: true, preflight: { _ in })
     }
 
     @Test
@@ -152,14 +152,14 @@ struct ProvisionInputsTests {
     @Test(arguments: [
         ["--authorized-key", "k.pub"], ["--sudo", "/usr/bin/true"], ["--keychain"], ["--full-name", "CI"], ["--tidy"],
     ])
-    func testAnAccountFlagNeedsAUsername(arguments: [String]) throws {
+    func testAnAccountFlagNeedsAUsername(arguments: [String]) async throws {
         let create = try ParbakeTool.Create.parse(arguments)
-        #expect(throws: ValidationError.self) { try create.validateAccount() }
+        await #expect(throws: ValidationError.self) { try await create.validateAccount() }
     }
 
     @Test
-    func testNoAccountFlagsAndNoUsernameIsValid() throws {
-        try ParbakeTool.Create.parse([]).validateAccount()
+    func testNoAccountFlagsAndNoUsernameIsValid() async throws {
+        try await ParbakeTool.Create.parse([]).validateAccount()
     }
 
     @Test

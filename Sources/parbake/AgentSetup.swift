@@ -18,8 +18,8 @@ enum AgentSetup {
     }
 
     /// Leaves `binary` at `GuestAgentInstallation.stagedPath` in the guest.
-    static func stage(_ binary: Data, shell: GuestShell, address: String) throws {
-        let result = shell.run(GuestAgentInstallation.stageCommand, on: address, input: binary)
+    static func stage(_ binary: Data, shell: GuestShell, address: String) async throws {
+        let result = await shell.run(GuestAgentInstallation.stageCommand, on: address, input: binary)
         guard result.status == 0 else {
             throw ParbakeError.runtime("copying the agent into the guest failed: \(LogText.sanitized(result.errorOutput))")
         }
@@ -77,7 +77,7 @@ enum AgentSetup {
                 username: shell.username, macAddress: virtualMachine.macAddress, leaseFile: DHCPLeases.path, timeout: .seconds(timeout),
                 guestExited: { virtualMachine.currentExit }, lease: { DHCPLeases.currentAddress(for: virtualMachine.macAddress) },
                 reach: { address in
-                    let result = shell.run("true", on: address)
+                    let result = await shell.run("true", on: address)
                     return result.status == 0 ? .success(()) : .failure(ProbeError(LogText.sanitized(result.errorOutput)))
                 }, onProbeError: onProbeError)
         } catch {
@@ -87,13 +87,18 @@ enum AgentSetup {
 
     /// The account password from the login keychain with `keychainService`, or from standard
     /// input, or prompted for on a terminal.
-    static func password(for username: String, keychainService: String?) throws -> String {
+    static func password(for username: String, keychainService: String?) async throws -> String {
         if let keychainService {
-            guard let password = try GuestCredentials(service: keychainService).password(for: username) else {
+            guard let password = try await GuestCredentials(service: keychainService).password(for: username) else {
                 throw ParbakeError.runtime("the keychain has no password for \(username) under \(keychainService)")
             }
             return password
         }
+        return try promptedPassword(for: username)
+    }
+
+    /// The account password from standard input, or prompted for on a terminal.
+    static func promptedPassword(for username: String) throws -> String {
         if isatty(STDIN_FILENO) != 0 {
             var buffer = [CChar](repeating: 0, count: 1024)
             guard let line = readpassphrase("Password for \(username): ", &buffer, buffer.count, 0) else {

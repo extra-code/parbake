@@ -41,7 +41,7 @@ extension RuntimeEnvironment {
             },
             runShell: { shell, command, address, timeout in
                 // Cancelling the calling task terminates ssh.
-                await shell.runCancellable(command, on: address, timeout: timeout)
+                await shell.run(command, on: address, timeout: timeout)
             },
             allocateNetwork: { message, configuration in
                 try await LiveNetwork.allocate(message, configuration: configuration, log: log)

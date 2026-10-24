@@ -54,7 +54,7 @@ extension ParbakeTool.Agent {
                 throw ParbakeError.runtime("\(bundle) has no Provisioned account or GuestKey; run provision first")
             }
             let binary = try AgentSetup.binary(at: agent)
-            let password = try AgentSetup.password(for: username, keychainService: keychain ? keychainService : nil)
+            let password = try await AgentSetup.password(for: username, keychainService: keychain ? keychainService : nil)
 
             let virtualMachine = try MacOSVirtualMachine(bundle: vmBundle, cpus: 4, memoryInBytes: 8 << 30)
             print("Booting \(bundle)")
@@ -62,8 +62,8 @@ extension ParbakeTool.Agent {
             do {
                 let address = try await AgentSetup.waitForSSH(virtualMachine, shell: shell, timeout: timeout)
                 print("\(username) answers over SSH at \(address)")
-                try AgentSetup.stage(binary, shell: shell, address: address)
-                let result = shell.run("/bin/bash -s", on: address, input: try GuestAgentInstallation.script(password: password))
+                try await AgentSetup.stage(binary, shell: shell, address: address)
+                let result = await shell.run("/bin/bash -s", on: address, input: try GuestAgentInstallation.script(password: password))
                 guard result.output.contains(GuestAgentInstallation.installedMarker) else {
                     throw ParbakeError.runtime(
                         "installing the agent failed (ssh exit status \(result.status)): "
@@ -71,7 +71,7 @@ extension ParbakeTool.Agent {
                 }
                 print("Installed the agent as the LaunchDaemon \(GuestAgentInstallation.label)")
                 if try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
-                    _ = shell.run(GuestCommands.shutdown, on: address)
+                    _ = await shell.run(GuestCommands.shutdown, on: address)
                 }
             } catch {
                 try? await virtualMachine.forceStop()

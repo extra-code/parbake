@@ -102,7 +102,7 @@ extension ParbakeTool {
                 try resolved.apply(BundleConfiguration.load(from: URL(fileURLWithPath: config)))
             }
             try resolved.validateScripts()
-            try resolved.validateAccount()
+            try await resolved.validateAccount()
             try resolved.validateRestoreImage()
             resolved.stdinPassword = try resolved.readStdinPassword()
             try await resolved.create()
@@ -156,7 +156,7 @@ extension ParbakeTool {
         func readStdinPassword(
             isTerminal: Bool = isatty(STDIN_FILENO) != 0,
             read: () throws -> String = {
-                try AgentSetup.password(for: "", keychainService: nil)
+                try AgentSetup.promptedPassword(for: "")
             }
         ) throws -> String? {
             guard username != nil, !keychain, !isTerminal else { return nil }
@@ -164,13 +164,13 @@ extension ParbakeTool {
         }
 
         /// Checks the account inputs before anything is downloaded.
-        func validateAccount() throws {
+        func validateAccount() async throws {
             guard let username else {
                 try ProvisionInputs.checkAccountFlags(
                     username: nil, authorizedKeys: authorizedKey, sudo: sudo, keychain: keychain, fullName: fullName, tidy: tidy)
                 return
             }
-            try ProvisionInputs.validate(
+            try await ProvisionInputs.validate(
                 username: username, authorizedKeys: authorizedKey.map { URL(fileURLWithPath: $0) }, sudo: sudo, agent: agent,
                 noAgent: noAgent, scripts: script.map { URL(fileURLWithPath: $0) }, keychain: keychain, keychainService: keychainService)
         }

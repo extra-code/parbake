@@ -69,7 +69,7 @@ extension ParbakeTool {
         var password: String?
 
         func run() async throws {
-            try ProvisionInputs.validate(
+            try await ProvisionInputs.validate(
                 username: username, authorizedKeys: authorizedKey.map { URL(fileURLWithPath: $0) }, sudo: sudo, agent: agent,
                 noAgent: noAgent, scripts: [], keychain: keychain, keychainService: keychainService)
             if keychain, KeychainAccess.for(.ofCurrentProcess()) == .anyApplication {
@@ -82,13 +82,15 @@ extension ParbakeTool {
             var publicKeys = try authorizedKey.map { try Self.publicKey(at: URL(fileURLWithPath: $0)) }
             let agentBinary = noAgent ? nil : try AgentSetup.binary(at: agent)
             let password =
-                try keychain
-                ? GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
-                : self.password ?? AgentSetup.password(for: username, keychainService: nil)
+                if keychain {
+                    try await GuestCredentials(service: keychainService).passwordCreatingIfNeeded(for: username)
+                } else {
+                    try self.password ?? AgentSetup.promptedPassword(for: username)
+                }
 
             let provisioning = GuestProvisioning(fullName: fullName ?? username, username: username, password: password)
             let startOptions = try provisioning.startOptions()
-            publicKeys.append(try Self.createGuestKey(at: vmBundle.guestKeyURL))
+            publicKeys.append(try await Self.createGuestKey(at: vmBundle.guestKeyURL))
 
             let virtualMachine = try MacOSVirtualMachine(bundle: vmBundle, cpus: cpus, memoryInBytes: memory << 30)
             print("Booting \(bundle) to create the account \(username)")
@@ -106,12 +108,12 @@ extension ParbakeTool {
 
             do {
                 if let agentBinary {
-                    try AgentSetup.stage(agentBinary, shell: ssh, address: address)
+                    try await AgentSetup.stage(agentBinary, shell: ssh, address: address)
                 }
                 let script = try GuestPreparation.script(
                     username: username, password: password, publicKeys: publicKeys, tidy: tidy, installAgent: agentBinary != nil,
                     sudoCommands: sudo)
-                let result = ssh.run("/bin/bash -s", on: address, input: script)
+                let result = await ssh.run("/bin/bash -s", on: address, input: script)
                 guard result.output.contains(GuestPreparation.preparedMarker) else {
                     throw ParbakeError.runtime(
                         "preparing the account failed (ssh exit status \(result.status)): "
@@ -124,7 +126,7 @@ extension ParbakeTool {
                         + (tidy ? ", turned Spotlight off and emptied the caches" : ""))
                 try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)
                 if agentBinary != nil, try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
-                    _ = ssh.run(GuestCommands.shutdown, on: address)
+                    _ = await ssh.run(GuestCommands.shutdown, on: address)
                 }
             } catch {
                 try? FileManager.default.removeItem(at: vmBundle.provisionedURL)
@@ -148,9 +150,9 @@ extension ParbakeTool {
         }
 
         /// Creates the guest key pair, or reuses it from an interrupted run, and returns its public key.
-        static func createGuestKey(at url: URL) throws -> String {
+        static func createGuestKey(at url: URL) async throws -> String {
             if !FileManager.default.fileExists(atPath: url.path) {
-                let result = try HostProcess.runBlocking(
+                let result = try await HostProcess.run(
                     URL(fileURLWithPath: "/usr/bin/ssh-keygen"),
                     arguments: ["-q", "-t", "ed25519", "-N", "", "-C", "parbake", "-f", url.path], stdout: .inherit, stderr: .inherit)
                 guard result.status == 0 else {

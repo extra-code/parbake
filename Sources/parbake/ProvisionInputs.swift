@@ -12,8 +12,8 @@ struct ProvisionInputs {
     static func validate(
         username: String, authorizedKeys: [URL], sudo: [String], agent: String?, noAgent: Bool,
         scripts: [URL], keychain: Bool, keychainService: String,
-        keychainPreflight: (String) throws -> Void = { try GuestCredentials(service: $0).preflight() }
-    ) throws {
+        keychainPreflight: (String) async throws -> Void = { try await GuestCredentials(service: $0).preflight() }
+    ) async throws {
         guard GuestUsername(rawValue: username) != nil else {
             throw ValidationError("the username must be \(GuestUsername.rule)")
         }
@@ -43,7 +43,7 @@ struct ProvisionInputs {
             }
         }
         if keychain {
-            try keychainPreflight(keychainService)
+            try await keychainPreflight(keychainService)
         }
     }
 

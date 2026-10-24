@@ -41,8 +41,8 @@ struct GuestShellTests {
     }
 
     @Test
-    func testRunRefusesAnInvalidTarget() {
-        let result = GuestShell(username: "-oProxyCommand=x", credential: .password("pw")).run("c", on: "192.168.64.3")
+    func testRunRefusesAnInvalidTarget() async {
+        let result = await GuestShell(username: "-oProxyCommand=x", credential: .password("pw")).run("c", on: "192.168.64.3")
         #expect(result.status == -1)
         #expect(result.errorOutput == "invalid guest username or address")
         #expect(!result.timedOut)
@@ -53,20 +53,20 @@ struct GuestShellTests {
     }
 
     @Test
-    func testATimeoutKillsTheChild() throws {
+    func testATimeoutKillsTheChild() async throws {
         let stub = try Self.makeStub("#!/bin/sh\nexec sleep 30\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let result = shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(1))
+        let result = await shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(1))
         #expect(result.timedOut)
         #expect(result.status == -1)
     }
 
     @Test
-    func testAChildThatIgnoresTermIsKilled() throws {
+    func testAChildThatIgnoresTermIsKilled() async throws {
         let stub = try Self.makeStub("#!/bin/sh\ntrap '' TERM\nwhile :; do :; done\n")
         defer { try? FileManager.default.removeItem(at: stub) }
         let start = SuspendingClock.now
-        let result = shell(stub).run("c", on: "192.168.64.3", timeout: .milliseconds(500))
+        let result = await shell(stub).run("c", on: "192.168.64.3", timeout: .milliseconds(500))
         #expect(result.timedOut)
         #expect(result.status == -1)
         let elapsed = SuspendingClock.now - start
@@ -74,29 +74,29 @@ struct GuestShellTests {
     }
 
     @Test
-    func testASignalDeathReportsTheSignalPlusOneTwentyEight() throws {
+    func testASignalDeathReportsTheSignalPlusOneTwentyEight() async throws {
         let stub = try Self.makeStub("#!/bin/sh\nkill -TERM $$\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let result = shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(10))
+        let result = await shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(10))
         #expect(result.status == 128 + SIGTERM)
         #expect(!result.timedOut)
     }
 
     @Test
-    func testAChildThatIgnoresStdinDoesNotCrash() throws {
+    func testAChildThatIgnoresStdinDoesNotCrash() async throws {
         let stub = try Self.makeStub("#!/bin/sh\nexit 0\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let result = shell(stub).run("c", on: "192.168.64.3", input: Data(repeating: 0x61, count: 1 << 20), timeout: .seconds(10))
+        let result = await shell(stub).run("c", on: "192.168.64.3", input: Data(repeating: 0x61, count: 1 << 20), timeout: .seconds(10))
         #expect(!result.timedOut)
         #expect(result.status == 0)
     }
 
     @Test
-    func testLargeOutputOnBothStreamsWhileInputIsWritten() throws {
+    func testLargeOutputOnBothStreamsWhileInputIsWritten() async throws {
         let stub = try Self.makeStub("#!/bin/sh\ntee /dev/stderr\n")
         defer { try? FileManager.default.removeItem(at: stub) }
         let size = 4 << 20
-        let result = shell(stub).run("c", on: "192.168.64.3", input: Data(repeating: 0x62, count: size), timeout: .seconds(30))
+        let result = await shell(stub).run("c", on: "192.168.64.3", input: Data(repeating: 0x62, count: size), timeout: .seconds(30))
         #expect(!result.timedOut)
         #expect(result.status == 0)
         #expect(result.output.utf8.count == size)
@@ -104,19 +104,19 @@ struct GuestShellTests {
     }
 
     @Test
-    func testTheChildGetsAMinimalEnvironment() throws {
+    func testTheChildGetsAMinimalEnvironment() async throws {
         let stub = try Self.makeStub("#!/bin/sh\nenv\n")
         defer { try? FileManager.default.removeItem(at: stub) }
         setenv("PARBAKE_TEST_CANARY", "leaked", 1)
         defer { unsetenv("PARBAKE_TEST_CANARY") }
-        let keyed = shell(stub, credential: .key(URL(fileURLWithPath: "/tmp/key"))).run("c", on: "192.168.64.3", timeout: .seconds(10))
+        let keyed = await shell(stub, credential: .key(URL(fileURLWithPath: "/tmp/key"))).run("c", on: "192.168.64.3", timeout: .seconds(10))
         let keyedLines = Set(keyed.output.split(separator: "\n").map(String.init))
         #expect(keyedLines.contains("PATH=/usr/bin:/bin:/usr/sbin:/sbin"))
         #expect(keyedLines.contains { $0.hasPrefix("HOME=") })
         #expect(!keyed.output.contains("PARBAKE_TEST_CANARY"))
         #expect(!keyed.output.contains("SSH_ASKPASS"))
 
-        let password = shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(10))
+        let password = await shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(10))
         let lines = Set(password.output.split(separator: "\n").map(String.init))
         #expect(lines.contains("PARBAKE_SSH_PASSWORD=pw"))
         #expect(lines.contains("SSH_ASKPASS_REQUIRE=force"))
@@ -124,10 +124,10 @@ struct GuestShellTests {
     }
 
     @Test
-    func testTheExitStatusAndStandardInputReachTheCaller() throws {
+    func testTheExitStatusAndStandardInputReachTheCaller() async throws {
         let stub = try Self.makeStub("#!/bin/sh\ncat\necho oops >&2\nexit 7\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let result = shell(stub).run("c", on: "192.168.64.3", input: "echoed", timeout: .seconds(10))
+        let result = await shell(stub).run("c", on: "192.168.64.3", input: "echoed", timeout: .seconds(10))
         #expect(result.status == 7)
         #expect(result.output == "echoed")
         #expect(result.errorOutput == "oops\n")

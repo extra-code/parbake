@@ -39,10 +39,10 @@ public struct GuestCredentials: Sendable {
     /// Probes the keychain with a lookup for a reserved account and creates nothing.
     ///
     /// A missing item counts as success; a locked or refusing keychain throws its classified failure.
-    public func preflight() throws {
+    public func preflight() async throws {
         switch access {
         case .anyApplication:
-            let result = try Self.security(["find-generic-password", "-s", service, "-a", Self.preflightAccount])
+            let result = try await Self.security(["find-generic-password", "-s", service, "-a", Self.preflightAccount])
             if result.status == 0 || result.status == Self.itemNotFoundStatus { return }
             throw Self.failure(result, service: service, "probe the keychain")
         case .creatorOnly:
@@ -87,7 +87,7 @@ public struct GuestCredentials: Sendable {
     }
 
     /// The stored password for `username`, or nil when there is none.
-    public func password(for username: String) throws -> String? {
+    public func password(for username: String) async throws -> String? {
         if access == .creatorOnly {
             try ScriptInput.check(service, field: "keychain service")
             try ScriptInput.check(username, field: "keychain account")
@@ -102,7 +102,7 @@ public struct GuestCredentials: Sendable {
             }
             return String(decoding: data, as: UTF8.self)
         }
-        let result = try Self.security(["find-generic-password", "-s", service, "-a", username, "-w"])
+        let result = try await Self.security(["find-generic-password", "-s", service, "-a", username, "-w"])
         if result.status == Self.itemNotFoundStatus {
             return nil
         }
@@ -115,11 +115,11 @@ public struct GuestCredentials: Sendable {
     /// Stores `password` for `username`, replacing a stored one.
     ///
     /// A stored item is deleted and added again: changing an item in place asks for permission.
-    public func store(_ password: String, for username: String) throws {
+    public func store(_ password: String, for username: String) async throws {
         guard !password.contains("\n") else {
             throw RuntimeFailure.invalidArgument("a keychain password cannot contain a newline")
         }
-        try remove(for: username)
+        try await remove(for: username)
         if access == .creatorOnly {
             try ScriptInput.check(service, field: "keychain service")
             try ScriptInput.check(username, field: "keychain account")
@@ -133,7 +133,7 @@ public struct GuestCredentials: Sendable {
             }
             return
         }
-        let result = try Self.security([
+        let result = try await Self.security([
             "add-generic-password", "-A",
             "-s", service,
             "-a", username,
@@ -146,7 +146,7 @@ public struct GuestCredentials: Sendable {
     }
 
     /// Removes the stored password for `username`; a missing one is not an error.
-    public func remove(for username: String) throws {
+    public func remove(for username: String) async throws {
         if access == .creatorOnly {
             try ScriptInput.check(service, field: "keychain service")
             try ScriptInput.check(username, field: "keychain account")
@@ -156,19 +156,19 @@ public struct GuestCredentials: Sendable {
             }
             return
         }
-        let result = try Self.security(["delete-generic-password", "-s", service, "-a", username])
+        let result = try await Self.security(["delete-generic-password", "-s", service, "-a", username])
         guard result.status == 0 || result.status == Self.itemNotFoundStatus else {
             throw Self.failure(result, service: service, "remove the password of \(username) from the keychain")
         }
     }
 
     /// The stored password for `username`; generates and stores one when there is none.
-    public func passwordCreatingIfNeeded(for username: String) throws -> String {
-        if let password = try password(for: username) {
+    public func passwordCreatingIfNeeded(for username: String) async throws -> String {
+        if let password = try await password(for: username) {
             return password
         }
         let password = try Self.generatePassword()
-        try store(password, for: username)
+        try await store(password, for: username)
         return password
     }
 
@@ -200,12 +200,12 @@ public struct GuestCredentials: Sendable {
     }
 
     /// Runs one `security` command through its interactive mode, which exits with the command's status.
-    static func security(_ arguments: [String], securityPath: String = "/usr/bin/security") throws -> SecurityResult {
+    static func security(_ arguments: [String], securityPath: String = "/usr/bin/security") async throws -> SecurityResult {
         for argument in arguments {
             try ScriptInput.check(argument, field: "keychain argument")
         }
         let command = arguments.map(quoted).joined(separator: " ")
-        let result = try HostProcess.runBlocking(
+        let result = try await HostProcess.run(
             URL(fileURLWithPath: securityPath), arguments: ["-i"], input: Data((command + "\n").utf8))
         return SecurityResult(
             status: result.status,

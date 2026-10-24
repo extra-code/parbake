@@ -59,7 +59,7 @@ extension ParbakeTool {
                 let address = try await AgentSetup.waitForSSH(virtualMachine, shell: instanceShell, timeout: timeout)
                 print("SSH answers at \(address) after \(started.duration(to: .now))")
 
-                let install = instanceShell.run(
+                let install = await instanceShell.run(
                     "cat > /tmp/parbake-agent && chmod 755 /tmp/parbake-agent && "
                         + "(nohup /tmp/parbake-agent >/tmp/parbake-agent.log 2>&1 </dev/null &) && echo started",
                     on: address, input: agentBinary)
@@ -85,9 +85,9 @@ extension ParbakeTool {
                 try await probeProcesses(agentClient, virtualMachine: virtualMachine, username: source.provisionedUsername ?? "")
                 try? await agentClient.close()
 
-                let log = instanceShell.run("cat /tmp/parbake-agent.log", on: address)
+                let log = await instanceShell.run("cat /tmp/parbake-agent.log", on: address)
                 print("Agent log: \(log.output.trimmingCharacters(in: .whitespacesAndNewlines))")
-                _ = instanceShell.run(GuestCommands.shutdown, on: address)
+                _ = await instanceShell.run(GuestCommands.shutdown, on: address)
             } catch {
                 try? await virtualMachine.forceStop()
                 throw error

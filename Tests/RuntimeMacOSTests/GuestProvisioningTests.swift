@@ -101,28 +101,28 @@ struct GuestCredentialsTests {
     }
 
     @Test
-    func testStoresReplacesAndRemovesAPassword() throws {
+    func testStoresReplacesAndRemovesAPassword() async throws {
         let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication)
-        defer { try? credentials.remove(for: "ci") }
-        #expect(try credentials.password(for: "ci") == nil)
+        defer { try? await credentials.remove(for: "ci") }
+        #expect(try await credentials.password(for: "ci") == nil)
 
-        let generated = try credentials.passwordCreatingIfNeeded(for: "ci")
-        #expect(try credentials.password(for: "ci") == generated)
-        #expect(try credentials.passwordCreatingIfNeeded(for: "ci") == generated)
+        let generated = try await credentials.passwordCreatingIfNeeded(for: "ci")
+        #expect(try await credentials.password(for: "ci") == generated)
+        #expect(try await credentials.passwordCreatingIfNeeded(for: "ci") == generated)
 
-        try credentials.store("replaced", for: "ci")
-        #expect(try credentials.password(for: "ci") == "replaced")
+        try await credentials.store("replaced", for: "ci")
+        #expect(try await credentials.password(for: "ci") == "replaced")
 
-        try credentials.remove(for: "ci")
-        #expect(try credentials.password(for: "ci") == nil)
+        try await credentials.remove(for: "ci")
+        #expect(try await credentials.password(for: "ci") == nil)
     }
 
     @Test
-    func testTheSecurityToolReadsThePasswordWithoutAPrompt() throws {
+    func testTheSecurityToolReadsThePasswordWithoutAPrompt() async throws {
         let service = "container-runtime-macos.test.\(UUID().uuidString)"
         let credentials = GuestCredentials(service: service, access: .anyApplication)
-        defer { try? credentials.remove(for: "ci") }
-        try credentials.store("open-to-every-app", for: "ci")
+        defer { try? await credentials.remove(for: "ci") }
+        try await credentials.store("open-to-every-app", for: "ci")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
@@ -171,20 +171,20 @@ struct GuestCredentialsTests {
     }
 
     @Test
-    func testSecurityArgumentsAreCheckedAndQuoted() throws {
+    func testSecurityArgumentsAreCheckedAndQuoted() async throws {
         for hostile in ["a\nb", "a\u{0}b", "x PARBAKE_y", "a\rb", "a\u{7F}b"] {
-            #expect(throws: (any Error).self) { try GuestCredentials.security(["find-generic-password", "-s", hostile]) }
+            await #expect(throws: (any Error).self) { try await GuestCredentials.security(["find-generic-password", "-s", hostile]) }
         }
         #expect(GuestCredentials.quoted(#"a"b\c"#) == #""a\"b\\c""#)
         #expect(GuestCredentials.quoted("it's $(id)") == "\"it's $(id)\"")
     }
 
     @Test
-    func testPreflightNeverCreatesTheProbeAccount() throws {
+    func testPreflightNeverCreatesTheProbeAccount() async throws {
         let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication)
-        try credentials.preflight()
-        try credentials.preflight()
-        #expect(try credentials.password(for: GuestCredentials.preflightAccount) == nil)
+        try await credentials.preflight()
+        try await credentials.preflight()
+        #expect(try await credentials.password(for: GuestCredentials.preflightAccount) == nil)
     }
 
     @Test
@@ -206,30 +206,30 @@ struct GuestCredentialsTests {
     }
 
     @Test
-    func testPreflightSucceedsOnAnUnlockedKeychain() throws {
-        try GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication).preflight()
+    func testPreflightSucceedsOnAnUnlockedKeychain() async throws {
+        try await GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .anyApplication).preflight()
     }
 
     @Test
-    func testAServiceWithANewlineIsRefusedBeforeSecurityRuns() {
+    func testAServiceWithANewlineIsRefusedBeforeSecurityRuns() async {
         let credentials = GuestCredentials(service: "bad\nservice", access: .anyApplication)
-        #expect(throws: (any Error).self) { try credentials.password(for: "ci") }
-        #expect(throws: (any Error).self) { try credentials.store("secret-value", for: "ci") }
-        #expect(throws: (any Error).self) { try credentials.remove(for: "ci") }
+        await #expect(throws: (any Error).self) { try await credentials.password(for: "ci") }
+        await #expect(throws: (any Error).self) { try await credentials.store("secret-value", for: "ci") }
+        await #expect(throws: (any Error).self) { try await credentials.remove(for: "ci") }
     }
 
     @Test(.enabled(if: SigningIdentity.ofCurrentProcess() != .adHoc))
-    func testACreatorOnlyRoundTrip() throws {
+    func testACreatorOnlyRoundTrip() async throws {
         let credentials = GuestCredentials(service: "container-runtime-macos.test.\(UUID().uuidString)", access: .creatorOnly)
-        defer { try? credentials.remove(for: "ci") }
-        try credentials.preflight()
-        #expect(try credentials.password(for: "ci") == nil)
-        try credentials.store("first-value", for: "ci")
-        #expect(try credentials.password(for: "ci") == "first-value")
-        try credentials.store("second-value", for: "ci")
-        #expect(try credentials.password(for: "ci") == "second-value")
-        try credentials.remove(for: "ci")
-        #expect(try credentials.password(for: "ci") == nil)
+        defer { try? await credentials.remove(for: "ci") }
+        try await credentials.preflight()
+        #expect(try await credentials.password(for: "ci") == nil)
+        try await credentials.store("first-value", for: "ci")
+        #expect(try await credentials.password(for: "ci") == "first-value")
+        try await credentials.store("second-value", for: "ci")
+        #expect(try await credentials.password(for: "ci") == "second-value")
+        try await credentials.remove(for: "ci")
+        #expect(try await credentials.password(for: "ci") == nil)
     }
 }
 
@@ -458,20 +458,20 @@ struct GuestSecurityRunnerTests {
     }
 
     @Test
-    func testTheStatusAndStandardErrorReachTheCaller() throws {
+    func testTheStatusAndStandardErrorReachTheCaller() async throws {
         let (directory, tool) = try stub("#!/bin/sh\ncat > /dev/null\necho 'user interaction is not allowed' >&2\nexit 36\n")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let result = try GuestCredentials.security(["find-generic-password", "-s", "svc"], securityPath: tool)
+        let result = try await GuestCredentials.security(["find-generic-password", "-s", "svc"], securityPath: tool)
         #expect(result.status == 36)
         #expect(result.output == "")
         #expect(result.errorOutput == "user interaction is not allowed\n")
     }
 
     @Test
-    func testTheCommandReachesTheToolOnStandardInputAndItsOutputIsReturned() throws {
+    func testTheCommandReachesTheToolOnStandardInputAndItsOutputIsReturned() async throws {
         let (directory, tool) = try stub("#!/bin/sh\ncat\n")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let result = try GuestCredentials.security(["add-generic-password", "-w", "se\"cret"], securityPath: tool)
+        let result = try await GuestCredentials.security(["add-generic-password", "-w", "se\"cret"], securityPath: tool)
         #expect(result.status == 0)
         #expect(result.output == "\"add-generic-password\" \"-w\" \"se\\\"cret\"\n")
         #expect(result.errorOutput == "")
@@ -527,7 +527,7 @@ struct GuestIOErrorTextTests {
     @Test
     func aPasswordWithANewlineIsRefused() async {
         await Self.expect(
-            { try GuestCredentials(service: "svc", access: .anyApplication).store("a\nb", for: "user") },
+            { try await GuestCredentials(service: "svc", access: .anyApplication).store("a\nb", for: "user") },
             code: .invalidArgument, text: "a keychain password cannot contain a newline")
     }
 

@@ -45,8 +45,8 @@ public struct GuestShell: Sendable {
 
     /// Runs `command` on `address` and returns ssh's exit status, the command's standard output
     /// and ssh's standard error; `input` goes to its standard input.
-    public func run(_ command: String, on address: String, input: String = "", timeout: Duration = .seconds(300)) -> Result {
-        run(command, on: address, input: Data(input.utf8), timeout: timeout)
+    public func run(_ command: String, on address: String, input: String = "", timeout: Duration = .seconds(300)) async -> Result {
+        await run(command, on: address, input: Data(input.utf8), timeout: timeout)
     }
 
     /// The ssh argument list for `command`, or nil when `username` or `address` is not valid.
@@ -97,24 +97,9 @@ public struct GuestShell: Sendable {
     }
 
     /// Runs `command` on `address` with `input` as its standard input, which may be binary.
-    /// After `timeout` the child gets SIGTERM, then SIGKILL two seconds later.
-    public func run(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) -> Result {
-        guard let invocation = prepare(command, on: address) else { return Self.invalidTarget }
-        defer { invocation.cleanUp() }
-        guard let environment = invocation.environment else { return Self.failed }
-        do {
-            let output = try HostProcess.runBlocking(
-                URL(fileURLWithPath: sshPath), arguments: invocation.arguments, environment: environment, input: input,
-                timeout: timeout)
-            return Self.result(output)
-        } catch {
-            return Self.failed
-        }
-    }
-
-    /// Runs `command` like the blocking `run`, which an async caller cannot overload by `async` alone, without holding a thread; cancelling the calling task
-    /// terminates ssh and returns what it had printed.
-    public func runCancellable(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) async -> Result {
+    /// After `timeout` ssh gets SIGTERM, then SIGKILL two seconds later. Cancelling the calling task
+    /// terminates ssh the same way and returns what it had printed.
+    public func run(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) async -> Result {
         guard let invocation = prepare(command, on: address) else { return Self.invalidTarget }
         defer { invocation.cleanUp() }
         guard let environment = invocation.environment else { return Self.failed }
@@ -128,9 +113,14 @@ public struct GuestShell: Sendable {
         }
     }
 
-    /// `runCancellable(_:on:input:timeout:)` with text as standard input.
+    /// The same as `run(_:on:input:timeout:)`.
+    public func runCancellable(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) async -> Result {
+        await run(command, on: address, input: input, timeout: timeout)
+    }
+
+    /// The same as `run(_:on:input:timeout:)` with text as standard input.
     public func runCancellable(_ command: String, on address: String, input: String = "", timeout: Duration = .seconds(300)) async -> Result {
-        await runCancellable(command, on: address, input: Data(input.utf8), timeout: timeout)
+        await run(command, on: address, input: Data(input.utf8), timeout: timeout)
     }
 
     private static let invalidTarget = Result(status: -1, output: "", errorOutput: "invalid guest username or address")

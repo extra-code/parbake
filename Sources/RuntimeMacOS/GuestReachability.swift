@@ -25,8 +25,9 @@ public enum GuestReachability {
         let deadline = now().advanced(by: timeout)
         while true {
             if let value = try await probe() { return value }
-            if now() >= deadline { return nil }
-            try await sleep(every)
+            let left = now().duration(to: deadline)
+            if left <= .zero { return nil }
+            try await sleep(min(every, left))
             if now() > deadline { return nil }
         }
     }

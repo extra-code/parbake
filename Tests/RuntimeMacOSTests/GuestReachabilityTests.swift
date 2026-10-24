@@ -72,7 +72,7 @@ struct GuestReachabilityTests {
             return nil
         }
         #expect(value == nil)
-        #expect(tally.all.count == 4)
+        #expect(tally.all.count == 5)
     }
 
     @Test
@@ -87,6 +87,22 @@ struct GuestReachabilityTests {
         #expect(value == nil)
         #expect(tally.all.count == 16)
         #expect(clock.sleeps.count == 15)
+    }
+
+    @Test
+    func testPollClampsTheLastSleepToTheDeadline() async throws {
+        let clock = TestClock()
+        let start = clock.now
+        let tally = Tally()
+        let value = try await GuestReachability.poll(every: .seconds(3), timeout: .seconds(10), sleep: { clock.sleep($0) }, now: { clock.now }) {
+            () async throws -> Int? in
+            tally.add("probe")
+            return nil
+        }
+        #expect(value == nil)
+        #expect(clock.sleeps == [.seconds(3), .seconds(3), .seconds(3), .seconds(1)])
+        #expect(tally.all.count == 5)
+        #expect(clock.now == start.advanced(by: .seconds(10)))
     }
 
     @Test

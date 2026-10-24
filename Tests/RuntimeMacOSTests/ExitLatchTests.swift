@@ -84,4 +84,33 @@ struct ExitLatchTests {
         #expect(latch.current == first)
         #expect(latch.current?.exitCode == 1)
     }
+
+    @Test
+    func testACancelledTimedWaitReturnsNilWithoutAnExit() async {
+        let latch = ExitLatch()
+        let waiters = await startWaiters(1) { await latch.wait(timeout: .seconds(60)) }
+        waiters[0].cancel()
+        #expect(await waiters[0].value == nil)
+        #expect(latch.current == nil)
+    }
+
+    @Test
+    func testATimedWaitCancelledBeforeItStartsReturnsNil() async {
+        let latch = ExitLatch()
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await latch.wait(timeout: .seconds(60))
+        }
+        #expect(await task.value == nil)
+    }
+
+    @Test
+    func testACancelledTimedWaitDoesNotLoseALaterExit() async {
+        let latch = ExitLatch()
+        let waiters = await startWaiters(1) { await latch.wait(timeout: .seconds(60)) }
+        waiters[0].cancel()
+        _ = await waiters[0].value
+        latch.finish(exitCode: 4)
+        #expect(await latch.wait(timeout: .seconds(60))?.exitCode == 4)
+    }
 }
