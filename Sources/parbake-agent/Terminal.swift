@@ -32,6 +32,14 @@ struct PseudoTerminal {
         self.controller = controller
         self.device = device
     }
+
+    /// Sets the window size of the terminal whose controller is `controller`.
+    static func resize(controller: Int32, columns: UInt32, rows: UInt32) throws {
+        var size = winsize(ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: columns), ws_xpixel: 0, ws_ypixel: 0)
+        guard ioctl(controller, setWindowSize, &size) == 0 else {
+            throw AgentError.posix("ioctl(TIOCSWINSZ)", errno)
+        }
+    }
 }
 
 /// The agent's `--controlling-terminal` mode: started as the leader of a new session, it makes its

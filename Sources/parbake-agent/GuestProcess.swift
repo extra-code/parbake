@@ -19,6 +19,8 @@ final class GuestProcess: @unchecked Sendable {
     let id: String
     private let process: ContainerizationOCI.Process
     private let ports: (stdin: UInt32?, stdout: UInt32?, stderr: UInt32?)
+    /// Connects to a host port and returns the socket.
+    private let connect: @Sendable (UInt32) throws -> Int32
     private let lock = NSLock()
     private var pid: pid_t = 0
     private var stdinWriter: Int32 = -1
@@ -29,13 +31,17 @@ final class GuestProcess: @unchecked Sendable {
     /// The copies of the process's output; its exit is reported once they finished, never before.
     private let outputCopies = DispatchGroup()
 
-    init(id: String, process: ContainerizationOCI.Process, stdin: UInt32?, stdout: UInt32?, stderr: UInt32?) throws {
+    init(
+        id: String, process: ContainerizationOCI.Process, stdin: UInt32?, stdout: UInt32?, stderr: UInt32?,
+        connect: @escaping @Sendable (UInt32) throws -> Int32 = VsockConnection.toHost
+    ) throws {
         guard !process.args.isEmpty else {
             throw AgentError.invalidArgument("the process has no arguments")
         }
         self.id = id
         self.process = process
         self.ports = (stdin, stdout, stderr)
+        self.connect = connect
     }
 
     var currentExit: Exit? { lock.withLock { exit } }
@@ -44,8 +50,8 @@ final class GuestProcess: @unchecked Sendable {
     var isRunning: Bool { lock.withLock { pid > 0 && exit == nil } }
 
     /// Connects the streams, spawns the process and returns its PID.
-    func start() throws -> pid_t {
-        let launch = try Launch(process: process)
+    func start() async throws -> pid_t {
+        let launch = try await Launch(process: process)
         if process.terminal {
             return try startWithTerminal(launch)
         }
@@ -67,9 +73,9 @@ final class GuestProcess: @unchecked Sendable {
         let stderr = try pipePair()
         fileDescriptors.append(stderr.write)
 
-        let stdinConnection = try ports.stdin.map(VsockConnection.toHost)
-        let stdoutConnection = try ports.stdout.map(VsockConnection.toHost)
-        let stderrConnection = try ports.stderr.map(VsockConnection.toHost)
+        let stdinConnection = try ports.stdin.map(connect)
+        let stdoutConnection = try ports.stdout.map(connect)
+        let stderrConnection = try ports.stderr.map(connect)
 
         let pid = try launch.spawn(stdin: stdin.read, stdout: stdout.write, stderr: stderr.write)
         lock.withLock {
@@ -112,8 +118,8 @@ final class GuestProcess: @unchecked Sendable {
         let pid: pid_t
         do {
             defer { close(terminal.device) }
-            stdinConnection = try ports.stdin.map(VsockConnection.toHost)
-            stdoutConnection = try ports.stdout.map(VsockConnection.toHost)
+            stdinConnection = try ports.stdin.map(connect)
+            stdoutConnection = try ports.stdout.map(connect)
             pid = try launch.spawn(stdin: terminal.device, stdout: terminal.device, stderr: terminal.device, controllingTerminal: true)
         } catch {
             close(terminal.controller)
@@ -151,10 +157,7 @@ final class GuestProcess: @unchecked Sendable {
             guard terminalController >= 0 else {
                 return
             }
-            var size = winsize(ws_row: UInt16(clamping: rows), ws_col: UInt16(clamping: columns), ws_xpixel: 0, ws_ypixel: 0)
-            guard ioctl(terminalController, PseudoTerminal.setWindowSize, &size) == 0 else {
-                throw AgentError.posix("ioctl(TIOCSWINSZ)", errno)
-            }
+            try PseudoTerminal.resize(controller: terminalController, columns: columns, rows: rows)
         }
     }
 
@@ -223,7 +226,13 @@ final class GuestProcess: @unchecked Sendable {
                 }
                 var offset = 0
                 while offset < count {
-                    let written = buffer.withUnsafeBytes { write(destination, $0.baseAddress! + offset, count - offset) }
+                    let written = buffer.withUnsafeBytes { bytes -> Int in
+                        guard let base = bytes.baseAddress else {
+                            errno = EINVAL
+                            return -1
+                        }
+                        return write(destination, base + offset, count - offset)
+                    }
                     if written < 0 && errno == EINTR {
                         continue
                     }
@@ -287,7 +296,7 @@ struct Launch {
     let environment: [String]
     let workingDirectory: String
 
-    init(process: ContainerizationOCI.Process) throws {
+    init(process: ContainerizationOCI.Process) async throws {
         let account = try Account(user: process.user)
         var environment = [
             "HOME": account.home,
@@ -296,7 +305,7 @@ struct Launch {
             "SHELL": account.shell,
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin",
         ]
-        if let temporary = TemporaryDirectories.shared.directory(for: account) {
+        if let temporary = await TemporaryDirectories.shared.directory(for: account) {
             // Tools on macOS expect the account's own temporary directory; launchd sets it only
             // for a session, not for the agent's children.
             environment["TMPDIR"] = temporary
@@ -319,7 +328,7 @@ struct Launch {
             self.arguments = [resolved] + process.args.dropFirst()
             self.environment = environmentList
         } else if current == 0 {
-            try GUISession.require(uid: account.uid, name: account.name)
+            try await GUISession.require(uid: account.uid, name: account.name)
             // The account's session bootstrap gives the process the login keychain and the window server.
             self.executable = "/bin/launchctl"
             self.arguments =
@@ -408,7 +417,7 @@ final class TemporaryDirectories: @unchecked Sendable {
 
     /// The account's directory: the agent's own from `confstr`, another account's from `getconf`
     /// run as that account, which only a root agent can do. Nil when the lookup fails.
-    func directory(for account: Account) -> String? {
+    func directory(for account: Account) async -> String? {
         if let known = lock.withLock({ directories[account.uid] }) {
             return known
         }
@@ -416,7 +425,7 @@ final class TemporaryDirectories: @unchecked Sendable {
         if account.uid == getuid() {
             found = Self.ownDirectory()
         } else if getuid() == 0 {
-            found = Self.directory(ofOther: account)
+            found = await Self.directory(ofOther: account)
         } else {
             found = nil
         }
@@ -438,20 +447,14 @@ final class TemporaryDirectories: @unchecked Sendable {
         return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
-    private static func directory(ofOther account: Account) -> String? {
-        let getconf = Process()
-        getconf.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        getconf.arguments = ["-u", account.name, "--", "/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"]
-        let output = Pipe()
-        getconf.standardOutput = output
-        getconf.standardError = FileHandle.nullDevice
-        guard (try? getconf.run()) != nil else {
+    private static func directory(ofOther account: Account) async -> String? {
+        guard
+            let result = await AgentCommand.capture("/usr/bin/sudo", ["-u", account.name, "--", "/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"])
+        else {
             return nil
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        getconf.waitUntilExit()
-        let path = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard getconf.terminationStatus == 0, path.hasPrefix("/") else {
+        let path = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.status == 0, path.hasPrefix("/") else {
             return nil
         }
         return path
@@ -507,5 +510,11 @@ private func withCStrings<Result>(_ strings: [String], _ body: (UnsafeMutablePoi
     var pointers = strings.map { strdup($0) }
     pointers.append(nil)
     defer { pointers.forEach { free($0) } }
-    return pointers.withUnsafeMutableBufferPointer { body($0.baseAddress!) }
+    return pointers.withUnsafeMutableBufferPointer { buffer in
+        // The array always holds the terminating nil, so it is never empty and has a base address.
+        guard let base = buffer.baseAddress else {
+            preconditionFailure("an argv array holds at least its terminating nil")
+        }
+        return body(base)
+    }
 }

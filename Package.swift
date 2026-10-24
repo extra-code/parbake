@@ -20,6 +20,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.10.1"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
+        // The agent's AgentCommand spawns children through it; no trait, since no call site needs its
+        // Foundation conveniences.
+        .package(url: "https://github.com/swiftlang/swift-subprocess", from: "1.0.2", traits: []),
         // The guest agent serves containerization's SandboxContext service over vsock.
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
         .package(url: "https://github.com/grpc/grpc-swift-nio-transport.git", from: "2.9.0"),
@@ -69,6 +72,7 @@ let package = Package(
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "Subprocess", package: "swift-subprocess"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]
         ),

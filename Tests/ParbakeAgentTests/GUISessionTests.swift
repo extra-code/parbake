@@ -8,12 +8,12 @@ import Testing
 
 struct GUISessionTests {
     @Test
-    func testAFalseProbeNamesTheAccount() {
-        #expect(throws: AgentError.self) {
-            try GUISession.require(uid: 501, name: "ci", probe: { _ in false })
+    func testAFalseProbeNamesTheAccount() async {
+        await #expect(throws: AgentError.self) {
+            try await GUISession.require(uid: 501, name: "ci", probe: { _ in false })
         }
         do {
-            try GUISession.require(uid: 501, name: "ci", probe: { _ in false })
+            try await GUISession.require(uid: 501, name: "ci", probe: { _ in false })
         } catch AgentError.failedPrecondition(let message) {
             #expect(message.contains("account ci has no GUI session"))
             #expect(message.contains("log it in"))
@@ -23,14 +23,14 @@ struct GUISessionTests {
     }
 
     @Test
-    func testATrueProbeDoesNotThrow() throws {
-        try GUISession.require(uid: 501, name: "ci", probe: { _ in true })
+    func testATrueProbeDoesNotThrow() async throws {
+        try await GUISession.require(uid: 501, name: "ci", probe: { _ in true })
     }
 
     @Test
-    func testUIDZeroIsNotProbed() throws {
+    func testUIDZeroIsNotProbed() async throws {
         nonisolated(unsafe) var probed = false
-        try GUISession.require(
+        try await GUISession.require(
             uid: 0, name: "root",
             probe: { _ in
                 probed = true
@@ -40,9 +40,9 @@ struct GUISessionTests {
     }
 
     @Test
-    func testTheProbeReceivesTheUID() {
+    func testTheProbeReceivesTheUID() async {
         nonisolated(unsafe) var seen: uid_t?
-        try? GUISession.require(
+        try? await GUISession.require(
             uid: 777, name: "ci",
             probe: { uid in
                 seen = uid

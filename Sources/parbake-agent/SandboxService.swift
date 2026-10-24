@@ -75,6 +75,11 @@ typealias WriteFileResponse = Com_Apple_Containerization_Sandbox_V3_WriteFileRes
 /// separate standard streams over vsock. Every other call answers `UNIMPLEMENTED`.
 struct SandboxService: SandboxContext.SimpleServiceProtocol {
     let processes = ProcessTable()
+    private let connect: @Sendable (UInt32) throws -> Int32
+
+    init(connect: @escaping @Sendable (UInt32) throws -> Int32 = VsockConnection.toHost) {
+        self.connect = connect
+    }
 
     func createProcess(request: CreateProcessRequest, context: ServerContext) async throws -> CreateProcessResponse {
         try await mapErrors {
@@ -94,7 +99,8 @@ struct SandboxService: SandboxContext.SimpleServiceProtocol {
                 process: process,
                 stdin: request.hasStdin ? request.stdin : nil,
                 stdout: request.hasStdout ? request.stdout : nil,
-                stderr: request.hasStderr ? request.stderr : nil
+                stderr: request.hasStderr ? request.stderr : nil,
+                connect: connect
             )
             try await processes.add(guestProcess)
             return CreateProcessResponse()
@@ -105,7 +111,7 @@ struct SandboxService: SandboxContext.SimpleServiceProtocol {
         try await mapErrors {
             let process = try await processes.process(request.id)
             var response = StartProcessResponse()
-            response.pid = try process.start()
+            response.pid = try await process.start()
             return response
         }
     }
@@ -179,43 +185,43 @@ struct SandboxService: SandboxContext.SimpleServiceProtocol {
     }
 
     func mount(request: MountRequest, context: ServerContext) async throws -> MountResponse {
-        throw Self.unimplemented("mount")
+        try await unimplemented("mount")
     }
 
     func umount(request: UmountRequest, context: ServerContext) async throws -> UmountResponse {
-        throw Self.unimplemented("umount")
+        try await unimplemented("umount")
     }
 
     func setenv(request: SetenvRequest, context: ServerContext) async throws -> SetenvResponse {
-        throw Self.unimplemented("setenv")
+        try await unimplemented("setenv")
     }
 
     func mkdir(request: MkdirRequest, context: ServerContext) async throws -> MkdirResponse {
-        throw Self.unimplemented("mkdir")
+        try await unimplemented("mkdir")
     }
 
     func sysctl(request: SysctlRequest, context: ServerContext) async throws -> SysctlResponse {
-        throw Self.unimplemented("sysctl")
+        try await unimplemented("sysctl")
     }
 
     func setupEmulator(request: SetupEmulatorRequest, context: ServerContext) async throws -> SetupEmulatorResponse {
-        throw Self.unimplemented("setupEmulator")
+        try await unimplemented("setupEmulator")
     }
 
     func writeFile(request: WriteFileRequest, context: ServerContext) async throws -> WriteFileResponse {
-        throw Self.unimplemented("writeFile")
+        try await unimplemented("writeFile")
     }
 
     func copy(request: CopyRequest, response: RPCWriter<CopyResponse>, context: ServerContext) async throws {
-        throw Self.unimplemented("copy")
+        return try await unimplemented("copy")
     }
 
     func stat(request: StatRequest, context: ServerContext) async throws -> StatResponse {
-        throw Self.unimplemented("stat")
+        try await unimplemented("stat")
     }
 
     func filesystemOperation(request: FilesystemOperationRequest, context: ServerContext) async throws -> FilesystemOperationResponse {
-        throw Self.unimplemented("filesystemOperation")
+        try await unimplemented("filesystemOperation")
     }
 
     func resizeProcess(request: ResizeProcessRequest, context: ServerContext) async throws -> ResizeProcessResponse {
@@ -226,42 +232,43 @@ struct SandboxService: SandboxContext.SimpleServiceProtocol {
     }
 
     func containerStatistics(request: ContainerStatisticsRequest, context: ServerContext) async throws -> ContainerStatisticsResponse {
-        throw Self.unimplemented("containerStatistics")
+        try await unimplemented("containerStatistics")
     }
 
     func proxyVsock(request: ProxyVsockRequest, context: ServerContext) async throws -> ProxyVsockResponse {
-        throw Self.unimplemented("proxyVsock")
+        try await unimplemented("proxyVsock")
     }
 
     func stopVsockProxy(request: StopVsockProxyRequest, context: ServerContext) async throws -> StopVsockProxyResponse {
-        throw Self.unimplemented("stopVsockProxy")
+        try await unimplemented("stopVsockProxy")
     }
 
     func ipLinkSet(request: IpLinkSetRequest, context: ServerContext) async throws -> IpLinkSetResponse {
-        throw Self.unimplemented("ipLinkSet")
+        try await unimplemented("ipLinkSet")
     }
 
     func ipAddrAdd(request: IpAddrAddRequest, context: ServerContext) async throws -> IpAddrAddResponse {
-        throw Self.unimplemented("ipAddrAdd")
+        try await unimplemented("ipAddrAdd")
     }
 
     func ipRouteAddLink(request: IpRouteAddLinkRequest, context: ServerContext) async throws -> IpRouteAddLinkResponse {
-        throw Self.unimplemented("ipRouteAddLink")
+        try await unimplemented("ipRouteAddLink")
     }
 
     func ipRouteAddDefault(request: IpRouteAddDefaultRequest, context: ServerContext) async throws -> IpRouteAddDefaultResponse {
-        throw Self.unimplemented("ipRouteAddDefault")
+        try await unimplemented("ipRouteAddDefault")
     }
 
     func configureDns(request: ConfigureDnsRequest, context: ServerContext) async throws -> ConfigureDnsResponse {
-        throw Self.unimplemented("configureDns")
+        try await unimplemented("configureDns")
     }
 
     func configureHosts(request: ConfigureHostsRequest, context: ServerContext) async throws -> ConfigureHostsResponse {
-        throw Self.unimplemented("configureHosts")
+        try await unimplemented("configureHosts")
     }
 
-    static func unimplemented(_ method: String) -> RPCError {
-        RPCError(code: .unimplemented, message: "parbake-agent does not implement \(method)")
+    /// Answers a call the agent does not serve with `AgentError.unimplemented`.
+    private func unimplemented<Response>(_ method: String) async throws -> Response {
+        try await mapErrors { throw AgentError.unimplemented(method) }
     }
 }
