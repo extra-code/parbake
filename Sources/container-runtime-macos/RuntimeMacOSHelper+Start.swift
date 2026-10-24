@@ -65,7 +65,8 @@ extension RuntimeMacOSHelper {
                 let service = RuntimeService(
                     root: URL(fileURLWithPath: root),
                     connection: anonymousConnection,
-                    log: log
+                    log: log,
+                    environment: .live(log: log)
                 )
 
                 let endpointServer = XPCServer(

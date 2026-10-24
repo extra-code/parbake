@@ -27,6 +27,10 @@ final class FakeGuestMachine: GuestMachine, @unchecked Sendable {
     private var stopTrigger: (call: Call, exit: GuestExit)?
     private var failing: Set<String> = []
     private var waiters: [CheckedContinuation<GuestExit, Never>] = []
+    private var startGate: Gate?
+    private var forceStopGate: Gate?
+    private var forceStopFailures = 0
+    private var startError: (any Error)?
 
     init(macAddress: String = "aa:bb:cc:dd:ee:ff", exit: GuestExit? = nil) {
         self.macAddress = macAddress
@@ -56,8 +60,25 @@ final class FakeGuestMachine: GuestMachine, @unchecked Sendable {
     /// Makes `requestStop` throw, as it does on a guest that cannot take the request.
     func failRequestStop() { lock.withLock { _ = failing.insert("requestStop") } }
 
-    /// Makes `forceStop` throw.
-    func failForceStop() { lock.withLock { _ = failing.insert("forceStop") } }
+    /// Makes `forceStop` throw, for the next `times` calls.
+    func failForceStop(times: Int = .max) { lock.withLock { forceStopFailures = times } }
+
+    /// Makes `forceStop` wait, after it recorded the call, until the returned gate opens or fails.
+    func suspendForceStop() -> Gate {
+        let gate = Gate()
+        lock.withLock { forceStopGate = gate }
+        return gate
+    }
+
+    /// Makes `start` wait, after it recorded the call, until the returned gate opens or fails.
+    func suspendStart() -> Gate {
+        let gate = Gate()
+        lock.withLock { startGate = gate }
+        return gate
+    }
+
+    /// Makes `start` throw `error`, after the gate if there is one; nil makes it succeed again.
+    func failStart(with error: (any Error)?) { lock.withLock { startError = error } }
 
     private func record(_ call: Call) {
         let trigger = lock.withLock { () -> GuestExit? in
@@ -67,7 +88,11 @@ final class FakeGuestMachine: GuestMachine, @unchecked Sendable {
         if let trigger { stop(with: trigger) }
     }
 
-    func start() async throws { record(.start) }
+    func start() async throws {
+        record(.start)
+        try await lock.withLock { startGate }?.pass()
+        if let error = lock.withLock({ startError }) { throw error }
+    }
 
     func requestStop() async throws {
         record(.requestStop)
@@ -76,7 +101,13 @@ final class FakeGuestMachine: GuestMachine, @unchecked Sendable {
 
     func forceStop() async throws {
         record(.forceStop)
-        if lock.withLock({ failing.contains("forceStop") }) { throw Refused() }
+        try await lock.withLock { forceStopGate }?.pass()
+        let fails = lock.withLock { () -> Bool in
+            guard forceStopFailures > 0 else { return false }
+            forceStopFailures -= 1
+            return true
+        }
+        if fails { throw Refused() }
     }
 
     func wait() async -> GuestExit {
