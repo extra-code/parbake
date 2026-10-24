@@ -78,6 +78,11 @@ tasks:
     cmds:
       - "{{.SWIFT}} test -c {{.CONFIGURATION}}"
 
+  coverage:
+    desc: Run the tests with coverage and print line coverage per module
+    cmds:
+      - scripts/coverage.sh
+
   install:
     desc: Install the signed plugin into INSTALL_ROOT
     deps: [sign]
@@ -119,6 +124,7 @@ tasks:
       - task: lint:reuse
       - task: lint:boundaries
       - task: lint:release
+      - task: lint:coverage
 
   lint:reuse:
     cmds:
@@ -141,6 +147,10 @@ tasks:
   lint:release:
     cmds:
       - scripts/release.sh --self-test
+
+  lint:coverage:
+    cmds:
+      - scripts/coverage.sh --self-test
 
   release:build:
     desc: >-
