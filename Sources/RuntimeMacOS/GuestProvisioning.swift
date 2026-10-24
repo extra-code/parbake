@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 import Virtualization
 
@@ -40,7 +39,7 @@ public struct GuestProvisioning: Sendable {
         do {
             try startOptions.setGuestProvisioning(options)
         } catch {
-            throw ContainerizationError(.invalidArgument, message: "invalid guest provisioning: \(error.localizedDescription)", cause: error)
+            throw RuntimeFailure.invalidArgument(causedMessage("invalid guest provisioning: \(error.localizedDescription)", cause: error))
         }
         return startOptions
     }

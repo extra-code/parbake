@@ -92,6 +92,14 @@ let package = Package(
             dependencies: ["RuntimeMacOS"]
         ),
         .testTarget(
+            name: "ContainerRuntimeMacOSTests",
+            dependencies: [
+                "container-runtime-macos",
+                "RuntimeMacOS",
+                .product(name: "ContainerXPC", package: "container"),
+            ]
+        ),
+        .testTarget(
             name: "ParbakeTests",
             dependencies: ["parbake"]
         ),

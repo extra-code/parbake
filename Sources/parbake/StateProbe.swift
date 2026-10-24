@@ -109,12 +109,12 @@ extension ParbakeTool {
                         "\(label): resumed after \(resumed), agent answered after \(answered); file from before the save "
                             + "\(found == 0 ? "found" : "missing"), new write \(written == 0 ? "ok" : "failed"), volume check exit \(fsck)")
                 } catch {
-                    print("\(label): resumed after \(resumed), but \(error)")
+                    print("\(label): resumed after \(resumed), but \(RuntimeLifecycle.containerizationError(from: error))")
                 }
                 await agent.close()
                 try? await virtualMachine.forceStop()
             } catch {
-                print("\(label): failed: \(error)")
+                print("\(label): failed: \(RuntimeLifecycle.containerizationError(from: error))")
             }
         }
 

@@ -20,26 +20,9 @@ public actor GuestAgent {
     /// How long the agent gets to connect a process's streams after it started the process.
     static let streamTimeout: Duration = .seconds(30)
 
-    /// The agent answered with a protocol this runtime does not speak.
-    public struct VersionMismatch: Error, CustomStringConvertible {
-        public let agentVersion: String
-
-        public var description: String {
-            "the guest agent reports version \"\(agentVersion)\", this runtime speaks protocol \(AgentVersionLine.protocolVersion); "
-                + "update the agent with parbake agent install"
-        }
-    }
-
-    /// The connection to the agent ended after the process started, so its exit is unknown; a
-    /// shutdown, for example, ends the connection before it reports its exit.
-    public struct ProcessLost: Error, CustomStringConvertible {
-        public let id: String
-        public let cause: any Error
-
-        public var description: String { "lost process \(id) in the guest: \(cause)" }
-    }
-
-    private let virtualMachine: MacOSVirtualMachine
+    private let virtualMachine: MacOSVirtualMachine?
+    /// Reads the agent's version line, or nil while no agent answers; tests replace it.
+    private let versionProbe: (@Sendable () async throws -> String?)?
     private var client: Vminitd?
     /// Counts connections, so a failed call drops only the connection it used.
     private var connection = 0
@@ -48,6 +31,20 @@ public actor GuestAgent {
 
     public init(virtualMachine: MacOSVirtualMachine) {
         self.virtualMachine = virtualMachine
+        self.versionProbe = nil
+    }
+
+    /// An agent client without a virtual machine whose readiness check calls `versionProbe`.
+    init(versionProbe: @escaping @Sendable () async throws -> String?) {
+        self.virtualMachine = nil
+        self.versionProbe = versionProbe
+    }
+
+    private func machine() throws -> MacOSVirtualMachine {
+        guard let virtualMachine else {
+            throw RuntimeFailure.internalError("the guest agent client has no virtual machine")
+        }
+        return virtualMachine
     }
 
     /// Whether an agent version line such as `1 0.52.0` names the protocol this runtime speaks.
@@ -80,35 +77,46 @@ public actor GuestAgent {
     /// Dials the agent once a second until it answers with this runtime's protocol and returns its
     /// version line.
     ///
-    /// Throws `VersionMismatch` at once for an agent with another protocol, and
+    /// Throws `RuntimeFailure.agentVersionMismatch` at once for an agent with another protocol, and
     /// `RuntimeFailure.agentTimeout` with no label when no agent answers within `timeout`.
     public func waitUntilReady(timeout: Duration) async throws -> String {
-        let deadline = ContinuousClock.now + timeout
-        while ContinuousClock.now < deadline {
+        let version = try await GuestReachability.poll(every: .seconds(1), timeout: timeout) { @Sendable [self] () async throws -> String? in
+            let version: String?
             do {
-                let version = try await call { try await $0.getenv(key: AgentVersionLine.variable) }
-                guard Self.speaksProtocol(version) else {
-                    throw VersionMismatch(agentVersion: version)
-                }
-                return version
-            } catch let error as VersionMismatch {
-                throw error
+                version = try await self.readVersion()
             } catch {
                 // The agent is not up yet; dial again.
+                return nil
             }
-            try await Task.sleep(for: .seconds(1))
+            guard let version else {
+                return nil
+            }
+            guard Self.speaksProtocol(version) else {
+                throw RuntimeFailure.agentVersionMismatch(agentVersion: version)
+            }
+            return version
         }
-        throw RuntimeFailure.agentTimeout(seconds: Int(timeout.components.seconds), label: nil)
+        guard let version else {
+            throw RuntimeFailure.agentTimeout(seconds: Int(timeout.components.seconds), label: nil)
+        }
+        return version
+    }
+
+    private func readVersion() async throws -> String? {
+        if let versionProbe {
+            return try await versionProbe()
+        }
+        return try await call { try await $0.getenv(key: AgentVersionLine.variable) }
     }
 
     /// Records a process in the agent; `stdio` are the caller's standard input, output and error,
     /// each optional.
     public func createProcess(id: String, process: ContainerizationOCI.Process, stdio: [FileHandle?]) async throws {
         guard processes[id] == nil else {
-            throw ContainerizationError(.exists, message: "process \(id) already exists")
+            throw RuntimeFailure.exists("process \(id) already exists")
         }
         let listeners = try stdio.map { handle in
-            try handle.map { _ in try virtualMachine.listen(onPort: allocatePort()) }
+            try handle.map { _ in try machine().listen(onPort: allocatePort()) }
         }
         do {
             try await call {
@@ -145,12 +153,12 @@ public actor GuestAgent {
                 status = try await self?.call { try await $0.waitProcess(id: id, containerID: nil) }
             } catch {
                 await process.streamsFinished()
-                throw ProcessLost(id: id, cause: error)
+                throw RuntimeFailure.processLost(id: id, cause: "\(error)")
             }
             await process.streamsFinished()
             try? await self?.call { try await $0.deleteProcess(id: id, containerID: nil) }
             guard let status else {
-                throw ProcessLost(id: id, cause: CancellationError())
+                throw RuntimeFailure.processLost(id: id, cause: "\(CancellationError())")
             }
             return GuestExit(exitCode: status.exitCode, exitedAt: status.exitedAt)
         }
@@ -160,7 +168,7 @@ public actor GuestAgent {
     /// Waits until the process has exited and its output has reached the caller's handles.
     public func wait(id: String) async throws -> GuestExit {
         guard let exit = try known(id).exit else {
-            throw ContainerizationError(.invalidState, message: "process \(id) is not started")
+            throw RuntimeFailure.invalidState("process \(id) is not started")
         }
         return try await exit.value
     }
@@ -186,13 +194,13 @@ public actor GuestAgent {
         try await createProcess(id: id, process: process, stdio: [nil, nil, nil])
         try await startProcess(id: id)
         guard let exit = try known(id).exit else {
-            throw ContainerizationError(.invalidState, message: "process \(id) is not started")
+            throw RuntimeFailure.invalidState("process \(id) is not started")
         }
         return try await withThrowingTaskGroup(of: Int32.self) { group in
             group.addTask { try await exit.value.exitCode }
             group.addTask {
                 try await Task.sleep(for: timeout)
-                throw ContainerizationError(.timeout, message: "\(process.args.joined(separator: " ")) did not finish within \(timeout)")
+                throw RuntimeFailure.timeout("\(process.args.joined(separator: " ")) did not finish within \(timeout)")
             }
             defer { group.cancelAll() }
             guard let code = try await group.next() else {
@@ -202,14 +210,14 @@ public actor GuestAgent {
         }
     }
 
-    /// Runs `shutdown -h now` as root, or with `sudo -n` as `provisionedUsername` when the agent does
+    /// Runs `GuestCommands.shutdownArguments` as root, or with `sudo -n` as `provisionedUsername` when the agent does
     /// not run as root; returns whether the guest accepted it. `note` receives what happened.
     public func shutDown(provisionedUsername: String?, timeout: Duration, note: (String) -> Void) async -> Bool {
-        var attempts = [ContainerizationOCI.Process(args: ["/sbin/shutdown", "-h", "now"], user: User(username: "root"))]
+        var attempts = [ContainerizationOCI.Process(args: GuestCommands.shutdownArguments(asRoot: true), user: User(username: "root"))]
         if let provisionedUsername {
             attempts.append(
                 ContainerizationOCI.Process(
-                    args: ["/usr/bin/sudo", "-n", "/sbin/shutdown", "-h", "now"], user: User(username: provisionedUsername)))
+                    args: GuestCommands.shutdownArguments(asRoot: false), user: User(username: provisionedUsername)))
         }
         for process in attempts {
             let user = process.user.username
@@ -219,7 +227,7 @@ public actor GuestAgent {
                     note("guest refused the shutdown through the agent as \(user), exit code \(code)")
                     continue
                 }
-            } catch is ProcessLost {
+            } catch RuntimeFailure.processLost {
                 // The guest ended the agent's connection while it shut down.
             } catch let error as RPCError where error.code == .failedPrecondition {
                 note("guest agent cannot run the shutdown as \(user): \(error.message)")
@@ -242,7 +250,7 @@ public actor GuestAgent {
 
     private func known(_ id: String) throws -> AgentProcess {
         guard let process = processes[id] else {
-            throw ContainerizationError(.notFound, message: "process \(id) does not exist")
+            throw RuntimeFailure.notFound("process \(id) does not exist")
         }
         return process
     }
@@ -274,11 +282,10 @@ public actor GuestAgent {
         }
         let handle: FileHandle
         do {
-            handle = try await virtualMachine.connect(toPort: Vminitd.port)
+            handle = try await machine().connect(toPort: Vminitd.port)
         } catch {
-            throw ContainerizationError(
-                .invalidState, message: "the guest agent does not answer on vsock port \(Vminitd.port); install it with parbake agent install",
-                cause: error)
+            throw RuntimeFailure.invalidState(
+                causedMessage("the guest agent does not answer on vsock port \(Vminitd.port); install it with parbake agent install", cause: error))
         }
         let client = try await Vminitd(connection: handle, group: MultiThreadedEventLoopGroup.singleton)
         self.client = client

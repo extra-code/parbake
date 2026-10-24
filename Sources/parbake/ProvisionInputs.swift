@@ -24,7 +24,7 @@ struct ProvisionInputs {
             do {
                 try GuestPreparation.checkSudoCommand(command)
             } catch {
-                throw ValidationError("\(error)")
+                throw ValidationError("\(RuntimeLifecycle.containerizationError(from: error))")
             }
         }
         if noAgent {
@@ -79,7 +79,7 @@ struct ProvisionInputs {
         do {
             try ScriptInput.check(key, field: "public key in \(url.path)")
         } catch {
-            throw ValidationError("\(error)")
+            throw ValidationError("\(RuntimeLifecycle.containerizationError(from: error))")
         }
     }
 }

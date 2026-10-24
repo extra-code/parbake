@@ -28,6 +28,8 @@ struct ParbakeExitTests {
         Row(error: ParbakeError.failure(.sshTimeout(username: "u", address: "a", seconds: 1)), code: 75),
         Row(error: ParbakeError.failure(.agentTimeout(seconds: 1, label: nil)), code: 75),
         Row(error: RuntimeFailure.vmLimitReached, code: 69),
+        Row(error: ParbakeError.failure(.guestStopped(exitCode: 1)), code: 1),
+        Row(error: RuntimeFailure.guestStopped(exitCode: nil), code: 1),
     ]
 
     @Test(arguments: rows)

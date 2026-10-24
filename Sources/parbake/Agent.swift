@@ -60,7 +60,7 @@ extension ParbakeTool.Agent {
             print("Booting \(bundle)")
             try await virtualMachine.start()
             do {
-                let address = try await waitForSSH(virtualMachine, shell: shell)
+                let address = try await AgentSetup.waitForSSH(virtualMachine, shell: shell, timeout: timeout)
                 print("\(username) answers over SSH at \(address)")
                 try AgentSetup.stage(binary, shell: shell, address: address)
                 let result = shell.run("/bin/bash -s", on: address, input: try GuestAgentInstallation.script(password: password))
@@ -71,7 +71,7 @@ extension ParbakeTool.Agent {
                 }
                 print("Installed the agent as the LaunchDaemon \(GuestAgentInstallation.label)")
                 if try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
-                    _ = shell.run("sudo -n /sbin/shutdown -h now", on: address)
+                    _ = shell.run(GuestCommands.shutdown, on: address)
                 }
             } catch {
                 try? await virtualMachine.forceStop()
@@ -80,25 +80,6 @@ extension ParbakeTool.Agent {
             print("Shutting the guest down")
             try await AgentSetup.waitForStop(virtualMachine)
             print("Installed the guest agent in \(bundle)")
-        }
-
-        private func waitForSSH(_ virtualMachine: MacOSVirtualMachine, shell: GuestShell) async throws -> String {
-            let deadline = ContinuousClock.now + .seconds(timeout)
-            var leased: String?
-            while ContinuousClock.now < deadline {
-                if let exit = virtualMachine.currentExit {
-                    throw ParbakeError.runtime("the guest stopped with exit code \(exit.exitCode)")
-                }
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
-                    leased = address
-                    if shell.run("true", on: address).status == 0 { return address }
-                }
-                try await Task.sleep(for: .seconds(3))
-            }
-            if let leased {
-                throw ParbakeError.failure(.sshTimeout(username: shell.username, address: leased, seconds: timeout))
-            }
-            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
         }
     }
 }

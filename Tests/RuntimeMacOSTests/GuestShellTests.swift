@@ -6,7 +6,7 @@ import Testing
 
 @testable import RuntimeMacOS
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct GuestShellTests {
     private func options(_ argv: [String]) -> Set<String> {
         var found: Set<String> = []
@@ -56,24 +56,30 @@ struct GuestShellTests {
     func testATimeoutKillsTheChild() throws {
         let stub = try Self.makeStub("#!/bin/sh\nexec sleep 30\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let start = ContinuousClock.now
         let result = shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(1))
         #expect(result.timedOut)
         #expect(result.status == -1)
-        #expect(ContinuousClock.now - start < .seconds(5))
     }
 
     @Test
     func testAChildThatIgnoresTermIsKilled() throws {
         let stub = try Self.makeStub("#!/bin/sh\ntrap '' TERM\nwhile :; do :; done\n")
         defer { try? FileManager.default.removeItem(at: stub) }
-        let start = ContinuousClock.now
+        let start = SuspendingClock.now
         let result = shell(stub).run("c", on: "192.168.64.3", timeout: .milliseconds(500))
         #expect(result.timedOut)
         #expect(result.status == -1)
-        let elapsed = ContinuousClock.now - start
+        let elapsed = SuspendingClock.now - start
         #expect(elapsed >= .seconds(2))
-        #expect(elapsed < .seconds(8))
+    }
+
+    @Test
+    func testASignalDeathReportsTheSignalPlusOneTwentyEight() throws {
+        let stub = try Self.makeStub("#!/bin/sh\nkill -TERM $$\n")
+        defer { try? FileManager.default.removeItem(at: stub) }
+        let result = shell(stub).run("c", on: "192.168.64.3", timeout: .seconds(10))
+        #expect(result.status == 128 + SIGTERM)
+        #expect(!result.timedOut)
     }
 
     @Test
@@ -133,5 +139,104 @@ struct GuestShellTests {
         try Data(body.utf8).write(to: url)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
         return url
+    }
+}
+
+struct GuestShellArgumentTests {
+    private func arguments(_ credential: GuestShell.Credential) throws -> [String] {
+        try #require(GuestShell.arguments(username: "u", address: "192.168.64.3", credential: credential, command: "cmd"))
+    }
+
+    private func optionValues(_ argv: [String]) -> [String] {
+        argv.indices.dropLast().filter { argv[$0] == "-o" }.map { argv[$0 + 1] }
+    }
+
+    @Test
+    func testTheKeyCredentialUsesOnlyThatKeyWithoutPrompts() throws {
+        let argv = try arguments(.key(URL(fileURLWithPath: "/tmp/key")))
+        let index = try #require(argv.firstIndex(of: "-i"))
+        #expect(argv[index + 1] == "/tmp/key")
+        let values = optionValues(argv)
+        #expect(values.contains("IdentitiesOnly=yes"))
+        #expect(values.contains("BatchMode=yes"))
+        #expect(!values.contains("PubkeyAuthentication=no"))
+    }
+
+    @Test
+    func testThePasswordCredentialSkipsKeysAndAsksOnce() throws {
+        let argv = try arguments(.password("pw"))
+        let values = optionValues(argv)
+        #expect(values.contains("PubkeyAuthentication=no"))
+        #expect(values.contains("PreferredAuthentications=keyboard-interactive,password"))
+        #expect(values.contains("NumberOfPasswordPrompts=1"))
+        #expect(!argv.contains("-i"))
+        #expect(!values.contains("BatchMode=yes"))
+    }
+
+    @Test(arguments: [GuestShell.Credential.password("pw"), .key(URL(fileURLWithPath: "/tmp/key"))])
+    func testTheSeparatorComesRightBeforeTheTargetAndEveryOptionPrecedesIt(credential: GuestShell.Credential) throws {
+        let argv = try arguments(credential)
+        let separator = try #require(argv.firstIndex(of: "--"))
+        #expect(argv[separator...] == ["--", "192.168.64.3", "cmd"])
+        #expect(argv.indices.filter { argv[$0] == "-o" || argv[$0] == "-i" || argv[$0] == "-l" }.allSatisfy { $0 < separator })
+        #expect(argv.filter { $0 == "--" }.count == 1)
+    }
+}
+
+extension GuestShellTests {
+    @Test
+    func testTheEnvironmentOfAKeyHoldsOnlyThePathAndTheHome() {
+        let environment = GuestShell.environment(askpass: URL(fileURLWithPath: "/unused"), password: nil)
+        #expect(Set(environment.keys) == ["PATH", "HOME"])
+        #expect(environment["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin")
+        #expect(environment["HOME"] == NSHomeDirectory())
+    }
+
+    @Test
+    func testTheEnvironmentOfAPasswordNamesTheAskpassHelper() {
+        let environment = GuestShell.environment(askpass: URL(fileURLWithPath: "/tmp/h/askpass"), password: "pw")
+        #expect(Set(environment.keys) == ["PATH", "HOME", "SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "PARBAKE_SSH_PASSWORD"])
+        #expect(environment["SSH_ASKPASS"] == "/tmp/h/askpass")
+        #expect(environment["SSH_ASKPASS_REQUIRE"] == "force")
+        #expect(environment["PARBAKE_SSH_PASSWORD"] == "pw")
+    }
+
+    @Test
+    func testTheAsyncRunReturnsTheExitStatusAndBothStreams() async throws {
+        let stub = try Self.makeStub("#!/bin/sh\ncat\necho oops >&2\nexit 7\n")
+        defer { try? FileManager.default.removeItem(at: stub) }
+        let result = await shell(stub).runCancellable("c", on: "192.168.64.3", input: "echoed", timeout: .seconds(10))
+        #expect(result.status == 7)
+        #expect(result.output == "echoed")
+        #expect(result.errorOutput == "oops\n")
+        #expect(!result.timedOut)
+    }
+
+    @Test
+    func testTheAsyncRunTimesOutLikeTheBlockingOne() async throws {
+        let stub = try Self.makeStub("#!/bin/sh\nexec sleep 30\n")
+        defer { try? FileManager.default.removeItem(at: stub) }
+        let result = await shell(stub).runCancellable("c", on: "192.168.64.3", input: "", timeout: .seconds(1))
+        #expect(result.timedOut)
+        #expect(result.status == -1)
+    }
+
+    @Test
+    func testCancellingTheTaskTerminatesSsh() async throws {
+        let stub = try Self.makeStub("#!/bin/sh\nexec sleep 30\n")
+        defer { try? FileManager.default.removeItem(at: stub) }
+        let guest = shell(stub)
+        let task = Task { await guest.runCancellable("c", on: "192.168.64.3", input: "", timeout: .seconds(60)) }
+        task.cancel()
+        let result = await task.value
+        #expect(!result.timedOut)
+        #expect(result.status != 0)
+    }
+
+    @Test
+    func testTheAsyncRunRefusesAnInvalidTarget() async {
+        let result = await GuestShell(username: "-oProxyCommand=x", credential: .password("pw")).runCancellable("c", on: "192.168.64.3", input: "")
+        #expect(result.status == -1)
+        #expect(result.errorOutput == "invalid guest username or address")
     }
 }

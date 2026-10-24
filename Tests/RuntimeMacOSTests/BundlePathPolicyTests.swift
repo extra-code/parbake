@@ -49,7 +49,7 @@ struct BundlePathPolicyTests {
         let link = home.appendingPathComponent("link.bundle")
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
         let policy = try BundlePathPolicy(home: home)
-        #expect(throws: BundlePathError.outsideRoots(path: outside.path, roots: [home.path])) { try policy.validate(link.path) }
+        #expect(throws: RuntimeFailure.bundlePath(.outsideRoots(path: outside.path, roots: [home.path]))) { try policy.validate(link.path) }
     }
 
     @Test
@@ -58,7 +58,7 @@ struct BundlePathPolicyTests {
         let outside = try makeBundle(in: try makeHome("elsewhere"))
         let policy = try BundlePathPolicy(home: home)
         let escaping = home.path + "/../elsewhere/" + outside.lastPathComponent
-        #expect(throws: BundlePathError.outsideRoots(path: outside.path, roots: [home.path])) { try policy.validate(escaping) }
+        #expect(throws: RuntimeFailure.bundlePath(.outsideRoots(path: outside.path, roots: [home.path]))) { try policy.validate(escaping) }
     }
 
     @Test
@@ -70,7 +70,7 @@ struct BundlePathPolicyTests {
         do {
             _ = try policy.validate(bundle.path)
             Issue.record("expected outsideRoots")
-        } catch let error as BundlePathError {
+        } catch RuntimeFailure.bundlePath(let error) {
             guard case .outsideRoots = error else {
                 Issue.record("got \(error)")
                 return
@@ -83,7 +83,7 @@ struct BundlePathPolicyTests {
         let home = try makeHome()
         let bundle = try makeBundle(in: home, mode: 0o777)
         let policy = try BundlePathPolicy(home: home)
-        #expect(throws: BundlePathError.writableByOthers(path: bundle.path)) { try policy.validate(bundle.path) }
+        #expect(throws: RuntimeFailure.bundlePath(.writableByOthers(path: bundle.path))) { try policy.validate(bundle.path) }
     }
 
     @Test
@@ -91,7 +91,7 @@ struct BundlePathPolicyTests {
         let home = try makeHome()
         let bundle = try makeBundle(in: home)
         let policy = try BundlePathPolicy(home: home, uid: getuid() + 1)
-        #expect(throws: BundlePathError.wrongOwner(path: bundle.path)) { try policy.validate(bundle.path) }
+        #expect(throws: RuntimeFailure.bundlePath(.wrongOwner(path: bundle.path))) { try policy.validate(bundle.path) }
     }
 
     @Test
@@ -104,7 +104,7 @@ struct BundlePathPolicyTests {
         do {
             _ = try policy.validate(bundle.path)
             Issue.record("expected linkOutsideRoots")
-        } catch let error as BundlePathError {
+        } catch RuntimeFailure.bundlePath(let error) {
             guard case .linkOutsideRoots = error else {
                 Issue.record("got \(error)")
                 return
@@ -135,7 +135,7 @@ struct BundlePathPolicyTests {
         do {
             _ = try BundlePathPolicy(home: home)
             Issue.record("expected badRootsFile")
-        } catch let error as BundlePathError {
+        } catch RuntimeFailure.bundlePath(let error) {
             guard case .badRootsFile = error else {
                 Issue.record("got \(error)")
                 return
@@ -146,7 +146,7 @@ struct BundlePathPolicyTests {
     @Test(arguments: ["relative/VM.bundle", "~/VM.bundle", "", "VM.bundle"])
     func testRefusesANonAbsoluteLabel(label: String) throws {
         let policy = try BundlePathPolicy(home: try makeHome())
-        #expect(throws: BundlePathError.notAbsolute(label)) { try policy.validate(label) }
+        #expect(throws: RuntimeFailure.bundlePath(.notAbsolute(label))) { try policy.validate(label) }
     }
 
     @Test
@@ -165,7 +165,7 @@ struct BundlePathPolicyTests {
         try Data("relative/dir\n".utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         let message = "line 1: relative/dir is not an absolute path"
-        #expect(throws: BundlePathError.badRootsFile(path: file.path, reason: message)) { try BundlePathPolicy(home: home) }
+        #expect(throws: RuntimeFailure.bundlePath(.badRootsFile(path: file.path, reason: message))) { try BundlePathPolicy(home: home) }
     }
 
     @Test
@@ -175,7 +175,9 @@ struct BundlePathPolicyTests {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("\(base.path)/missing\n".utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        #expect(throws: BundlePathError.self) { try BundlePathPolicy(home: home) }
+        #expect(
+            performing: { try BundlePathPolicy(home: home) },
+            throws: { if case RuntimeFailure.bundlePath(.badRootsFile) = $0 { true } else { false } })
     }
 
     @Test
@@ -185,7 +187,9 @@ struct BundlePathPolicyTests {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("\(home.path)\n".utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
-        #expect(throws: BundlePathError.self) { try BundlePathPolicy(home: home, uid: getuid() + 1) }
+        #expect(
+            performing: { try BundlePathPolicy(home: home, uid: getuid() + 1) },
+            throws: { if case RuntimeFailure.bundlePath(.badRootsFile) = $0 { true } else { false } })
     }
 
     @Test
@@ -207,12 +211,12 @@ struct BundlePathPolicyTests {
         let disk = bundle.appendingPathComponent("Disk.img")
         try FileManager.default.setAttributes([.posixPermissions: 0o666], ofItemAtPath: disk.path)
         let policy = try BundlePathPolicy(home: home)
-        #expect(throws: BundlePathError.writableByOthers(path: disk.path)) { try policy.validate(bundle.path) }
+        #expect(throws: RuntimeFailure.bundlePath(.writableByOthers(path: disk.path))) { try policy.validate(bundle.path) }
     }
 
     @Test
     func testOutsideRootsNamesTheRootsFile() {
-        let text = BundlePathError.outsideRoots(path: "/x", roots: ["/h"]).description
+        let text = RuntimeFailure.bundlePath(.outsideRoots(path: "/x", roots: ["/h"])).description
         #expect(text.contains("bundle-roots"))
     }
 
@@ -257,6 +261,6 @@ struct BundlePathPolicyTests {
         let layer = bundle.appendingPathComponent("Layer.asif")
         try FileManager.default.createSymbolicLink(at: layer, withDestinationURL: outside)
         let policy = try BundlePathPolicy(home: home)
-        #expect(throws: BundlePathError.linkOutsideRoots(file: layer.path, target: outside.path)) { try policy.validate(bundle.path) }
+        #expect(throws: RuntimeFailure.bundlePath(.linkOutsideRoots(file: layer.path, target: outside.path))) { try policy.validate(bundle.path) }
     }
 }

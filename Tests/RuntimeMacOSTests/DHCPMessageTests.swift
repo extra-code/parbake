@@ -111,3 +111,39 @@ struct DHCPParserMutationTests {
         #expect(valid.requestedAddress == [10, 0, 0, 2])
     }
 }
+
+/// The address helpers and the IPv4 checksum.
+struct DHCPMessageHelperTests {
+    @Test
+    func ipChecksumMatchesAPublishedHeader() {
+        // The header of the worked example on the Internet checksum of IPv4, checksum field zeroed.
+        let header: [UInt8] = [0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0x00, 0x00, 0xc0, 0xa8, 0x00, 0x01, 0xc0, 0xa8, 0x00, 0xc7]
+        #expect(DHCPMessage.ipChecksum(header) == 0xb861)
+    }
+
+    @Test
+    func aHeaderWithItsChecksumSumsToZero() {
+        let header: [UInt8] = [0x45, 0x00, 0x00, 0x73, 0x00, 0x00, 0x40, 0x00, 0x40, 0x11, 0xb8, 0x61, 0xc0, 0xa8, 0x00, 0x01, 0xc0, 0xa8, 0x00, 0xc7]
+        #expect(DHCPMessage.ipChecksum(header) == 0)
+    }
+
+    @Test
+    func ipv4ParsesDottedAddresses() {
+        #expect(DHCPMessage.ipv4("192.168.64.2") == [192, 168, 64, 2])
+        #expect(DHCPMessage.ipv4("1.2.3") == nil)
+        #expect(DHCPMessage.ipv4("1.2.3.256") == nil)
+        #expect(DHCPMessage.ipv4("a.b.c.d") == nil)
+    }
+
+    @Test
+    func macParsesColonSeparatedAddresses() {
+        #expect(DHCPMessage.mac("fe:28:22:08:0e:4d") == [0xfe, 0x28, 0x22, 0x08, 0x0e, 0x4d])
+        #expect(DHCPMessage.mac("fe:28:22:08:0e") == nil)
+        #expect(DHCPMessage.mac("zz:28:22:08:0e:4d") == nil)
+    }
+
+    @Test(arguments: [(0, [0, 0, 0, 0]), (24, [255, 255, 255, 0]), (32, [255, 255, 255, 255])] as [(Int, [UInt8])])
+    func maskOfAPrefixLength(_ item: (length: Int, mask: [UInt8])) {
+        #expect(DHCPMessage.mask(prefixLength: item.length) == item.mask)
+    }
+}

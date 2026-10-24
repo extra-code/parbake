@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 import Virtualization
 import vmnet
@@ -47,9 +46,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     /// The MAC address of the guest's network device, which names its DHCP lease.
     public let macAddress: String
     private let auxiliaryStoragePath: String
-    private let lock = NSLock()
-    private var exit: GuestExit?
-    private var waiters: [CheckedContinuation<GuestExit, Never>] = []
+    private let latch = ExitLatch()
 
     public init(bundle: MacOSVMBundle, cpus: Int, memoryInBytes: UInt64, network: GuestNetwork? = nil) throws {
         let configuration = try Self.configuration(bundle: bundle, cpus: cpus, memoryInBytes: memoryInBytes, network: network)
@@ -60,6 +57,17 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         self.virtualMachine = queue.sync { VZVirtualMachine(configuration: configuration, queue: queue) }
         super.init()
         queue.sync { self.virtualMachine.delegate = self }
+    }
+
+    /// The CPU count and memory size a guest gets for the request: each clamped to the range the host
+    /// allows, with the memory raised to at least `minimumMemoryInBytes`.
+    static func resources(
+        cpus: Int, memoryInBytes: UInt64, minimum: (cpus: Int, memory: UInt64), maximum: (cpus: Int, memory: UInt64)
+    ) -> (cpus: Int, memory: UInt64) {
+        (
+            cpus: min(max(cpus, minimum.cpus), maximum.cpus),
+            memory: min(max(memoryInBytes, minimumMemoryInBytes, minimum.memory), maximum.memory)
+        )
     }
 
     /// Builds a validated configuration for the guest in `bundle`.
@@ -73,15 +81,15 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         guard let hardwareModelData = try? Data(contentsOf: bundle.hardwareModelURL),
             let hardwareModel = VZMacHardwareModel(dataRepresentation: hardwareModelData)
         else {
-            throw ContainerizationError(.invalidArgument, message: "invalid hardware model in \(bundle.url.path)")
+            throw RuntimeFailure.invalidArgument("invalid hardware model in \(bundle.url.path)")
         }
         guard hardwareModel.isSupported else {
-            throw ContainerizationError(.unsupported, message: "this host does not support the hardware model in \(bundle.url.path)")
+            throw RuntimeFailure.unsupported("this host does not support the hardware model in \(bundle.url.path)")
         }
         guard let machineIdentifierData = try? Data(contentsOf: bundle.machineIdentifierURL),
             let machineIdentifier = VZMacMachineIdentifier(dataRepresentation: machineIdentifierData)
         else {
-            throw ContainerizationError(.invalidArgument, message: "invalid machine identifier in \(bundle.url.path)")
+            throw RuntimeFailure.invalidArgument("invalid machine identifier in \(bundle.url.path)")
         }
 
         let platform = VZMacPlatformConfiguration()
@@ -92,14 +100,12 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         let configuration = VZVirtualMachineConfiguration()
         configuration.platform = platform
         configuration.bootLoader = VZMacOSBootLoader()
-        configuration.cpuCount = min(
-            max(cpus, VZVirtualMachineConfiguration.minimumAllowedCPUCount),
-            VZVirtualMachineConfiguration.maximumAllowedCPUCount
-        )
-        configuration.memorySize = min(
-            max(memoryInBytes, minimumMemoryInBytes, VZVirtualMachineConfiguration.minimumAllowedMemorySize),
-            VZVirtualMachineConfiguration.maximumAllowedMemorySize
-        )
+        let granted = resources(
+            cpus: cpus, memoryInBytes: memoryInBytes,
+            minimum: (VZVirtualMachineConfiguration.minimumAllowedCPUCount, VZVirtualMachineConfiguration.minimumAllowedMemorySize),
+            maximum: (VZVirtualMachineConfiguration.maximumAllowedCPUCount, VZVirtualMachineConfiguration.maximumAllowedMemorySize))
+        configuration.cpuCount = granted.cpus
+        configuration.memorySize = granted.memory
 
         let disk = try bundle.storageDeviceAttachment()
         configuration.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: disk)]
@@ -109,7 +115,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
             network.attachment = VZVmnetNetworkDeviceAttachment(network: guestNetwork.reference)
             if let macAddress = guestNetwork.macAddress {
                 guard let address = VZMACAddress(string: macAddress) else {
-                    throw ContainerizationError(.invalidArgument, message: "invalid MAC address \(macAddress)")
+                    throw RuntimeFailure.invalidArgument("invalid MAC address \(macAddress)")
                 }
                 network.macAddress = address
             }
@@ -157,31 +163,45 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     public func start(options: VZMacOSVirtualMachineStartOptions, lockTimeout: Duration = .seconds(30)) async throws {
         // The options are read only on the virtual machine's queue.
         nonisolated(unsafe) let options = options
-        let deadline = ContinuousClock.now + lockTimeout
-        while true {
-            do {
-                try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
-                    queue.async {
-                        self.virtualMachine.start(options: options) { error in
-                            if let error {
-                                cc.resume(throwing: error)
-                            } else {
-                                cc.resume()
-                            }
+        try await Self.retryOnLockContention(path: auxiliaryStoragePath, timeout: lockTimeout, every: .seconds(2)) {
+            try await withCheckedThrowingContinuation { (cc: CheckedContinuation<Void, any Error>) in
+                queue.async {
+                    self.virtualMachine.start(options: options) { error in
+                        if let error {
+                            cc.resume(throwing: error)
+                        } else {
+                            cc.resume()
                         }
                     }
                 }
-                return
+            }
+        }
+    }
+
+    /// Runs `start` until it succeeds, retrying every `every` while its error is a lock contention.
+    ///
+    /// - Throws: `RuntimeFailure.lockHeld` for `path` when the contention outlasts `timeout`;
+    ///   `RuntimeFailure.vmLimitReached` or any other start error at once.
+    static func retryOnLockContention(
+        path: String, timeout: Duration, every: Duration,
+        sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        now: @Sendable () -> ContinuousClock.Instant = { .now },
+        _ start: () async throws -> Void
+    ) async throws {
+        let started = try await GuestReachability.poll(every: every, timeout: timeout, sleep: sleep, now: now) { () async throws -> Bool? in
+            do {
+                try await start()
+                return true
             } catch {
-                let mapped = Self.mapStartError(error)
-                guard Self.isLockContention(mapped) else {
+                let mapped = mapStartError(error)
+                guard isLockContention(mapped) else {
                     throw mapped
                 }
-                guard ContinuousClock.now < deadline else {
-                    throw RuntimeFailure.lockHeld(path: auxiliaryStoragePath, holder: nil)
-                }
-                try await Task.sleep(for: .seconds(2))
+                return nil
             }
+        }
+        guard started != nil else {
+            throw RuntimeFailure.lockHeld(path: path, holder: nil)
         }
     }
 
@@ -250,7 +270,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
         try await withCheckedThrowingContinuation { (cc: CheckedContinuation<FileHandle, any Error>) in
             queue.async {
                 guard let socketDevice = self.virtualMachine.socketDevices.first as? VZVirtioSocketDevice else {
-                    cc.resume(throwing: ContainerizationError(.invalidState, message: "the virtual machine has no vsock device"))
+                    cc.resume(throwing: RuntimeFailure.invalidState("the virtual machine has no vsock device"))
                     return
                 }
                 socketDevice.connect(toPort: port) { result in
@@ -285,7 +305,7 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
     /// Listens on `port` on the host; the listener is in place when this returns.
     public func listen(onPort port: UInt32) throws -> VsockPortListener {
         guard let socketDevice = queue.sync(execute: { virtualMachine.socketDevices.first as? VZVirtioSocketDevice }) else {
-            throw ContainerizationError(.invalidState, message: "the virtual machine has no vsock device")
+            throw RuntimeFailure.invalidState("the virtual machine has no vsock device")
         }
         let acceptor = VsockAcceptor()
         let listener = VZVirtioSocketListener()
@@ -372,65 +392,23 @@ public final class MacOSVirtualMachine: NSObject, @unchecked Sendable {
 
     /// Waits until the guest stops.
     public func wait() async -> GuestExit {
-        await withCheckedContinuation { cc in
-            let exit = lock.withLock {
-                if self.exit == nil {
-                    self.waiters.append(cc)
-                }
-                return self.exit
-            }
-            if let exit {
-                cc.resume(returning: exit)
-            }
-        }
+        await latch.wait()
     }
 
     /// Waits until the guest stops or `timeout` passes, and returns nil on timeout.
     ///
     /// Returns as soon as the guest stops.
     public func wait(timeout: Duration) async -> GuestExit? {
-        let resumed = NSLock()
-        nonisolated(unsafe) var done = false
-        return await withCheckedContinuation { (cc: CheckedContinuation<GuestExit?, Never>) in
-            let resume: @Sendable (GuestExit?) -> Void = { exit in
-                let first = resumed.withLock {
-                    defer { done = true }
-                    return !done
-                }
-                if first {
-                    cc.resume(returning: exit)
-                }
-            }
-            Task { resume(await self.wait()) }
-            Task {
-                try? await Task.sleep(for: timeout)
-                resume(self.currentExit)
-            }
-        }
+        await latch.wait(timeout: timeout)
     }
 
     /// The exit of the guest, or nil while it runs.
     public var currentExit: GuestExit? {
-        lock.withLock { self.exit }
+        latch.current
     }
 
     func finish(exitCode: Int32) {
-        let (exit, pending): (GuestExit?, [CheckedContinuation<GuestExit, Never>]) = lock.withLock {
-            guard self.exit == nil else {
-                return (nil, [])
-            }
-            let exit = GuestExit(exitCode: exitCode)
-            self.exit = exit
-            let pending = self.waiters
-            self.waiters = []
-            return (exit, pending)
-        }
-        guard let exit else {
-            return
-        }
-        for cc in pending {
-            cc.resume(returning: exit)
-        }
+        latch.finish(exitCode: exitCode)
     }
 }
 
@@ -502,7 +480,7 @@ private final class VsockAcceptor: NSObject, VZVirtioSocketListenerDelegate, @un
             }
             Task {
                 try? await Task.sleep(for: timeout)
-                self.finish(.failure(ContainerizationError(.timeout, message: "the guest did not connect to vsock port \(port)")))
+                self.finish(.failure(RuntimeFailure.timeout("the guest did not connect to vsock port \(port)")))
             }
         }
     }

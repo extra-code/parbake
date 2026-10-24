@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Testing
 
 @testable import RuntimeMacOS
@@ -29,7 +28,7 @@ struct ValidatedTests {
 
     @Test(arguments: ["\n", "\r", "\u{0}", "\u{7F}", "a PARBAKE_ROOT b"])
     func testRefusesScriptInput(value: String) {
-        #expect(throws: ContainerizationError.self) { try ScriptInput.check(value, field: "password") }
+        #expect(throws: RuntimeFailure.self) { try ScriptInput.check(value, field: "password") }
     }
 
     @Test
@@ -39,7 +38,7 @@ struct ValidatedTests {
             Issue.record("expected a throw")
         } catch {
             #expect("\(error)".contains("password"))
-            #expect((error as? ContainerizationError)?.code == .invalidArgument)
+            #expect((error as? RuntimeFailure)?.containerizationCode == .invalidArgument)
         }
     }
 

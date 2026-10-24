@@ -21,9 +21,39 @@ struct GuestAgentTests {
 
     @Test
     func testAVersionMismatchNamesTheProtocolThisRuntimeSpeaks() {
-        let description = GuestAgent.VersionMismatch(agentVersion: "2 0.1.0").description
+        let description = RuntimeFailure.agentVersionMismatch(agentVersion: "2 0.1.0").description
         #expect(description.contains("protocol \(AgentVersionLine.protocolVersion)"))
         #expect(description.contains("\"2 0.1.0\""))
+    }
+
+    @Test
+    func testAnAgentWithThisProtocolIsReady() async throws {
+        let agent = GuestAgent(versionProbe: { "1 0.52.0" })
+        #expect(try await agent.waitUntilReady(timeout: .seconds(5)) == "1 0.52.0")
+    }
+
+    @Test
+    func testAnAgentWithAnotherProtocolFailsAtOnce() async {
+        let agent = GuestAgent(versionProbe: { "2 0.1.0" })
+        await #expect(throws: RuntimeFailure.agentVersionMismatch(agentVersion: "2 0.1.0")) {
+            try await agent.waitUntilReady(timeout: .seconds(60))
+        }
+    }
+
+    @Test
+    func testNoAnswerTimesOutWithTheAgentTimeout() async {
+        let agent = GuestAgent(versionProbe: { nil })
+        await #expect(throws: RuntimeFailure.agentTimeout(seconds: 0, label: nil)) {
+            try await agent.waitUntilReady(timeout: .zero)
+        }
+    }
+
+    @Test
+    func testAFailingProbeCountsAsNoAnswer() async {
+        let agent = GuestAgent(versionProbe: { throw ProbeError("refused") })
+        await #expect(throws: RuntimeFailure.agentTimeout(seconds: 0, label: nil)) {
+            try await agent.waitUntilReady(timeout: .zero)
+        }
     }
 
     @Test

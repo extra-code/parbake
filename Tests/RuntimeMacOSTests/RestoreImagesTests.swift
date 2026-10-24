@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 import Synchronization
 import Testing
@@ -257,8 +256,32 @@ extension BundleReplacementTests {
         await #expect {
             try await BundleReplacement.build(at: target, replacing: false) { _ in Issue.record("built over an existing bundle") }
         } throws: { error in
-            (error as? ContainerizationError)?.code == .exists
+            { if case .exists? = error as? RuntimeFailure { true } else { false } }()
         }
         #expect(try disk(of: target) == "old")
+    }
+}
+
+struct RestoreImageCurlTests {
+    @Test
+    func testACurlFailureNamesTheStatusAndTheUrl() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("curl-stub-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record = directory.appendingPathComponent("argv")
+        let stub = directory.appendingPathComponent("curl")
+        try Data("#!/bin/sh\nprintf '%s\\n' \"$@\" > '\(record.path)'\nexit 22\n".utf8).write(to: stub)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stub.path)
+        let url = try #require(URL(string: "https://example.invalid/image.ipsw"))
+        let file = directory.appendingPathComponent("image.ipsw")
+
+        await #expect {
+            try await RestoreImageCache.curl(url, to: file, executable: stub)
+        } throws: { error in
+            guard case .internalError(let message)? = error as? RuntimeFailure else { return false }
+            return message == "downloading https://example.invalid/image.ipsw failed (curl exit status 22); run create again to resume"
+        }
+        let argv = try String(contentsOf: record, encoding: .utf8).split(separator: "\n").map(String.init)
+        #expect(argv == ["--fail", "--location", "--continue-at", "-", "--output", file.path, "https://example.invalid/image.ipsw"])
     }
 }

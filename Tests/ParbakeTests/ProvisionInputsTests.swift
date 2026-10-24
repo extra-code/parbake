@@ -71,6 +71,34 @@ struct ProvisionInputsTests {
     }
 
     @Test
+    func testABadSudoEntryPrintsTheCodeAndQuotedMessage() {
+        do {
+            try validate(sudo: ["ALL"])
+            Issue.record("expected a throw")
+        } catch let error as ValidationError {
+            #expect(
+                error.message
+                    == "invalidArgument: \"sudo command ALL must be an absolute command path with no arguments or wildcards, "
+                    + "using only the characters A-Z a-z 0-9 . _ / + -\"")
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+    }
+
+    @Test
+    func testAHostileKeyPrintsTheCodeAndQuotedMessage() throws {
+        let key = try file("p.pub", "ssh-ed25519 PARBAKE_X\n")
+        do {
+            try validate(keys: [key])
+            Issue.record("expected a throw")
+        } catch let error as ValidationError {
+            #expect(error.message == "invalidArgument: \"public key in \(key.path) must not contain the text PARBAKE_\"")
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+    }
+
+    @Test
     func testRefusesAMissingAgentBinary() {
         let missing = directory.appendingPathComponent("no-agent").path
         #expect(throws: ValidationError.self) { try validate(agent: missing, noAgent: false) }

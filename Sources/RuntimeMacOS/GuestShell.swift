@@ -84,101 +84,97 @@ public struct GuestShell: Sendable {
         return arguments
     }
 
-    private final class Captured: @unchecked Sendable {
-        var output = Data()
-        var errorOutput = Data()
+    /// The environment ssh runs in: a fixed `PATH`, the user's home and, for a password, the askpass
+    /// helper that prints the password from the environment.
+    static func environment(askpass: URL, password: String?) -> [String: String] {
+        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory()]
+        if let password {
+            environment["SSH_ASKPASS"] = askpass.path
+            environment["SSH_ASKPASS_REQUIRE"] = "force"
+            environment["PARBAKE_SSH_PASSWORD"] = password
+        }
+        return environment
     }
 
     /// Runs `command` on `address` with `input` as its standard input, which may be binary.
     /// After `timeout` the child gets SIGTERM, then SIGKILL two seconds later.
     public func run(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) -> Result {
-        guard let arguments = Self.arguments(username: username, address: address, credential: credential, command: command) else {
-            return Result(status: -1, output: "", errorOutput: "invalid guest username or address", timedOut: false)
-        }
-        let failed = Result(status: -1, output: "", errorOutput: "")
-        var environment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": NSHomeDirectory()]
-        var directory: URL?
-        defer {
-            if let directory {
-                try? FileManager.default.removeItem(at: directory)
-            }
-        }
-
-        if case .password(let password) = credential {
-            let helperDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-\(UUID().uuidString)")
-            let askpass = helperDirectory.appendingPathComponent("askpass")
-            do {
-                try FileManager.default.createDirectory(
-                    at: helperDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-                directory = helperDirectory
-                try Data("#!/bin/sh\nprintf '%s\\n' \"$PARBAKE_SSH_PASSWORD\"\n".utf8).write(to: askpass)
-                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: askpass.path)
-            } catch {
-                return failed
-            }
-            environment["SSH_ASKPASS"] = askpass.path
-            environment["SSH_ASKPASS_REQUIRE"] = "force"
-            environment["PARBAKE_SSH_PASSWORD"] = password
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: sshPath)
-        process.arguments = arguments
-        process.environment = environment
-        let stdin = Pipe()
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = stderr
-        let exited = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in exited.signal() }
+        guard let invocation = prepare(command, on: address) else { return Self.invalidTarget }
+        defer { invocation.cleanUp() }
+        guard let environment = invocation.environment else { return Self.failed }
         do {
-            try process.run()
+            let output = try HostProcess.runBlocking(
+                URL(fileURLWithPath: sshPath), arguments: invocation.arguments, environment: environment, input: input,
+                timeout: timeout)
+            return Self.result(output)
         } catch {
-            return failed
+            return Self.failed
         }
-
-        // Each pipe has its own thread, so none fills while another is serviced.
-        let captured = Captured()
-        let threads = DispatchGroup()
-        let writer = stdin.fileHandleForWriting
-        _ = fcntl(writer.fileDescriptor, F_SETNOSIGPIPE, 1)
-        for (pipe, isOutput) in [(stdout, true), (stderr, false)] {
-            threads.enter()
-            Thread {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if isOutput { captured.output = data } else { captured.errorOutput = data }
-                threads.leave()
-            }.start()
-        }
-        threads.enter()
-        Thread {
-            try? writer.write(contentsOf: input)
-            try? writer.close()
-            threads.leave()
-        }.start()
-
-        var timedOut = false
-        if exited.wait(timeout: .now() + Self.seconds(timeout)) == .timedOut {
-            timedOut = true
-            process.terminate()
-            if exited.wait(timeout: .now() + 2) == .timedOut {
-                kill(process.processIdentifier, SIGKILL)
-                exited.wait()
-            }
-        }
-        threads.wait()
-        return Result(
-            status: timedOut ? -1 : process.terminationStatus,
-            output: String(decoding: captured.output, as: UTF8.self),
-            errorOutput: String(decoding: captured.errorOutput, as: UTF8.self),
-            timedOut: timedOut
-        )
     }
 
-    private static func seconds(_ duration: Duration) -> Double {
-        let parts = duration.components
-        return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+    /// Runs `command` like the blocking `run`, which an async caller cannot overload by `async` alone, without holding a thread; cancelling the calling task
+    /// terminates ssh and returns what it had printed.
+    public func runCancellable(_ command: String, on address: String, input: Data, timeout: Duration = .seconds(300)) async -> Result {
+        guard let invocation = prepare(command, on: address) else { return Self.invalidTarget }
+        defer { invocation.cleanUp() }
+        guard let environment = invocation.environment else { return Self.failed }
+        do {
+            let output = try await HostProcess.run(
+                URL(fileURLWithPath: sshPath), arguments: invocation.arguments, environment: environment, input: input,
+                timeout: timeout)
+            return Self.result(output)
+        } catch {
+            return Self.failed
+        }
+    }
+
+    /// `runCancellable(_:on:input:timeout:)` with text as standard input.
+    public func runCancellable(_ command: String, on address: String, input: String = "", timeout: Duration = .seconds(300)) async -> Result {
+        await runCancellable(command, on: address, input: Data(input.utf8), timeout: timeout)
+    }
+
+    private static let invalidTarget = Result(status: -1, output: "", errorOutput: "invalid guest username or address")
+    private static let failed = Result(status: -1, output: "", errorOutput: "")
+
+    /// A timeout reports -1, so callers need not know the signal that ended ssh.
+    private static func result(_ output: ProcessOutput) -> Result {
+        Result(
+            status: output.timedOut ? -1 : output.status,
+            output: String(decoding: output.output, as: UTF8.self),
+            errorOutput: String(decoding: output.errorOutput, as: UTF8.self),
+            timedOut: output.timedOut)
+    }
+
+    /// The argument list and environment of one ssh run, and the directory holding its askpass helper.
+    /// A nil `environment` means the helper could not be written.
+    private struct Invocation {
+        let arguments: [String]
+        let environment: [String: String]?
+        let directory: URL?
+
+        func cleanUp() {
+            if let directory { try? FileManager.default.removeItem(at: directory) }
+        }
+    }
+
+    private func prepare(_ command: String, on address: String) -> Invocation? {
+        guard let arguments = Self.arguments(username: username, address: address, credential: credential, command: command) else {
+            return nil
+        }
+        guard case .password(let password) = credential else {
+            return Invocation(
+                arguments: arguments, environment: Self.environment(askpass: URL(fileURLWithPath: "/"), password: nil), directory: nil)
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-\(UUID().uuidString)")
+        let askpass = directory.appendingPathComponent("askpass")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            try Data("#!/bin/sh\nprintf '%s\\n' \"$PARBAKE_SSH_PASSWORD\"\n".utf8).write(to: askpass)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: askpass.path)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            return Invocation(arguments: arguments, environment: nil, directory: nil)
+        }
+        return Invocation(arguments: arguments, environment: Self.environment(askpass: askpass, password: password), directory: directory)
     }
 }

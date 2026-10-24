@@ -153,23 +153,7 @@ struct RuntimeLifecycleTests {
         #expect(!message.contains("README"))
     }
 
-    @Test(arguments: [
-        BundlePathError.notAbsolute("bundle"),
-        .outsideRoots(path: "/tmp/VM.bundle", roots: ["/Users/u"]),
-        .badRootsFile(path: "/Users/u/bundle-roots", reason: "line 1: x is not an absolute path"),
-    ])
-    func testBundlePathErrorMapsToInvalidArgument(error: BundlePathError) throws {
-        let mapped = try #require(RuntimeLifecycle.containerizationError(from: error) as? ContainerizationError)
-        #expect(mapped.code == .invalidArgument)
-        #expect(mapped.message == error.description)
-    }
-
-    @Test(arguments: [
-        RuntimeFailure.vmLimitReached,
-        .bundleMissing(path: "/Users/u/VM.bundle", missing: nil),
-        .lockHeld(path: "/Users/u/VM.bundle/AuxiliaryStorage", holder: nil),
-        .agentTimeout(seconds: 180, label: "runtime-macos.readiness-timeout"),
-    ])
+    @Test(arguments: RuntimeFailureTests.rows.map(\.failure))
     func testRuntimeFailureMapsToItsCode(failure: RuntimeFailure) throws {
         let mapped = try #require(RuntimeLifecycle.containerizationError(from: failure) as? ContainerizationError)
         #expect(mapped.code == failure.containerizationCode)

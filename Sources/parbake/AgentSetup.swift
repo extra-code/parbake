@@ -38,15 +38,50 @@ enum AgentSetup {
         return accepted
     }
 
-    /// Waits for the guest to stop, asks it like the power button after `timeout`, and stops it
-    /// forcibly a minute later.
+    /// Waits for a guest whose shutdown is under way to stop, asks it like the power button after
+    /// `timeout`, and stops it forcibly a minute later.
     static func waitForStop(_ virtualMachine: MacOSVirtualMachine, timeout: Duration = .seconds(180)) async throws {
-        if await virtualMachine.wait(timeout: timeout) == nil {
-            try? await virtualMachine.requestStop()
-            if await virtualMachine.wait(timeout: .seconds(60)) == nil {
-                try? await virtualMachine.forceStop()
-                throw ParbakeError.runtime("the guest did not shut down; it was stopped forcibly and may need another boot")
+        var forceStopFailed = false
+        let outcome = await GuestShutdown.run(
+            virtualMachine, request: { true }, requestWait: timeout, powerButtonWait: .seconds(60),
+            note: { step, error in
+                forceStopFailed = forceStopFailed || step == .forceStop
+                reportStopFailure(step, error)
+            })
+        if forceStopFailed {
+            throw ParbakeError.runtime("the guest did not shut down and may still be running")
+        }
+        if outcome == .forced {
+            throw ParbakeError.runtime("the guest did not shut down; it was stopped forcibly and may need another boot")
+        }
+    }
+
+    /// Prints a failed step of `GuestShutdown.run` to standard error.
+    static func reportStopFailure(_ step: GuestShutdown.Step, _ error: any Error) {
+        let text =
+            switch step {
+            case .requestStop: "the guest rejected the stop request"
+            case .forceStop: "could not stop the guest forcibly"
             }
+        FileHandle.standardError.write(Data("\(text): \(RuntimeLifecycle.containerizationError(from: error))\n".utf8))
+    }
+
+    /// Waits until the account answers over SSH and returns the address that answered.
+    ///
+    /// `onProbeError` sees each failed attempt once the guest has a lease.
+    static func waitForSSH(
+        _ virtualMachine: MacOSVirtualMachine, shell: GuestShell, timeout: Int, onProbeError: (ProbeError) -> Void = { _ in }
+    ) async throws -> String {
+        do {
+            return try await GuestReachability.waitForSSH(
+                username: shell.username, macAddress: virtualMachine.macAddress, leaseFile: DHCPLeases.path, timeout: .seconds(timeout),
+                guestExited: { virtualMachine.currentExit }, lease: { DHCPLeases.currentAddress(for: virtualMachine.macAddress) },
+                reach: { address in
+                    let result = shell.run("true", on: address)
+                    return result.status == 0 ? .success(()) : .failure(ProbeError(LogText.sanitized(result.errorOutput)))
+                }, onProbeError: onProbeError)
+        } catch {
+            throw ParbakeError.failure(error)
         }
     }
 

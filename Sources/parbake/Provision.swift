@@ -124,7 +124,7 @@ extension ParbakeTool {
                         + (tidy ? ", turned Spotlight off and emptied the caches" : ""))
                 try Data((username + "\n").utf8).write(to: vmBundle.provisionedURL)
                 if agentBinary != nil, try await !AgentSetup.confirmAndShutDown(virtualMachine: virtualMachine, bundle: vmBundle) {
-                    _ = ssh.run("sudo -n /sbin/shutdown -h now", on: address)
+                    _ = ssh.run(GuestCommands.shutdown, on: address)
                 }
             } catch {
                 try? FileManager.default.removeItem(at: vmBundle.provisionedURL)
@@ -142,7 +142,7 @@ extension ParbakeTool {
         static func publicKey(at url: URL) throws -> String {
             let key = try String(contentsOf: url, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty, !key.contains("\n"), !key.contains("PARBAKE_") else {
-                throw ValidationError("\(url.path) must hold one public key on one line")
+                throw ParbakeError.runtime("\(url.path) must hold one public key on one line")
             }
             return key
         }
@@ -150,42 +150,27 @@ extension ParbakeTool {
         /// Creates the guest key pair, or reuses it from an interrupted run, and returns its public key.
         static func createGuestKey(at url: URL) throws -> String {
             if !FileManager.default.fileExists(atPath: url.path) {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
-                process.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", "parbake", "-f", url.path]
-                try process.run()
-                process.waitUntilExit()
-                guard process.terminationStatus == 0 else {
+                let result = try HostProcess.runBlocking(
+                    URL(fileURLWithPath: "/usr/bin/ssh-keygen"),
+                    arguments: ["-q", "-t", "ed25519", "-N", "", "-C", "parbake", "-f", url.path], stdout: .inherit, stderr: .inherit)
+                guard result.status == 0 else {
                     throw ParbakeError.runtime("ssh-keygen failed to create \(url.path)")
                 }
             }
             return try publicKey(at: url.appendingPathExtension("pub"))
         }
 
-        /// Polls the DHCP leases and SSH until the account logs in, the guest stops, or the timeout passes.
+        /// Waits until the account logs in over SSH; on an SSH timeout it prints the last ssh error.
         private func waitForAccount(virtualMachine: MacOSVirtualMachine, ssh: GuestShell) async throws -> String {
-            let deadline = ContinuousClock.now + .seconds(timeout)
-            var leased: String?
             var lastError = ""
-            while ContinuousClock.now < deadline {
-                if let exit = virtualMachine.currentExit {
-                    throw ParbakeError.runtime("the guest stopped during provisioning with exit code \(exit.exitCode)")
-                }
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
-                    leased = address
-                    let result = ssh.run("true", on: address)
-                    if result.status == 0 { return address }
-                    lastError = LogText.sanitized(result.errorOutput)
-                }
-                try await Task.sleep(for: .seconds(5))
-            }
-            if let leased {
+            do {
+                return try await AgentSetup.waitForSSH(virtualMachine, shell: ssh, timeout: timeout) { lastError = $0.description }
+            } catch ParbakeError.failure(.sshTimeout(let username, let address, let seconds)) {
                 if !lastError.isEmpty {
                     FileHandle.standardError.write(Data("Last ssh error: \(lastError)\n".utf8))
                 }
-                throw ParbakeError.failure(.sshTimeout(username: ssh.username, address: leased, seconds: timeout))
+                throw ParbakeError.failure(.sshTimeout(username: username, address: address, seconds: seconds))
             }
-            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
         }
     }
 }

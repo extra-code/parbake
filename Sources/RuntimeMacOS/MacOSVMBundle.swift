@@ -33,18 +33,6 @@ public struct MacOSVMBundle: Sendable {
 
     static let fileNames = [diskImageName, auxiliaryStorageName, hardwareModelName, machineIdentifierName]
 
-    /// The overlay of an instance no longer stacks on its base, for example after the base bundle
-    /// was installed again.
-    public struct IncompatibleOverlayError: Error, CustomStringConvertible {
-        public let bundle: URL
-        public let base: URL
-        public let reason: String
-
-        public var description: String {
-            "the overlay in \(bundle.path) does not stack on \(base.path): \(reason)"
-        }
-    }
-
     public let url: URL
 
     /// Opens the bundle at `url` and checks that every file of the layout exists.
@@ -64,7 +52,7 @@ public struct MacOSVMBundle: Sendable {
         }
         self.url = url
         if isIncompleteInstance {
-            throw ContainerizationError(.invalidState, message: "\(url.path) is an incomplete instance; remove the container")
+            throw RuntimeFailure.invalidState("\(url.path) is an incomplete instance; remove the container")
         }
     }
 
@@ -134,11 +122,11 @@ public struct MacOSVMBundle: Sendable {
         do {
             image = try DiskImage(opening: .open(url: diskImageURL, mode: .readOnly))
         } catch {
-            throw ContainerizationError(.invalidArgument, message: "cannot open the disk image of \(url.path)", cause: error)
+            throw RuntimeFailure.invalidArgument(causedMessage("cannot open the disk image of \(url.path)", cause: error))
         }
         guard image.format == .asif else {
-            throw ContainerizationError(
-                .unsupported, message: "\(url.path) has a raw disk image; rebuild it with parbake create, which creates an ASIF disk image")
+            throw RuntimeFailure.unsupported(
+                "\(url.path) has a raw disk image; rebuild it with parbake create, which creates an ASIF disk image")
         }
     }
 
@@ -147,7 +135,7 @@ public struct MacOSVMBundle: Sendable {
     /// writable: the overlay of an instance, or the layer of a layer bundle.
     public func storageDeviceAttachment() throws -> VZDiskImageStorageDeviceAttachment {
         guard !isIncompleteInstance else {
-            throw ContainerizationError(.invalidState, message: "\(url.path) is an incomplete instance; remove the container")
+            throw RuntimeFailure.invalidState("\(url.path) is an incomplete instance; remove the container")
         }
         guard hasOverlay || hasLayer else {
             return try VZDiskImageStorageDeviceAttachment(url: diskImageURL, readOnly: false)
@@ -163,13 +151,11 @@ public struct MacOSVMBundle: Sendable {
             }
             return try VZDiskImageStorageDeviceAttachment(diskImage: stack)
         } catch let error as IncompatibleStackingError {
-            throw IncompatibleOverlayError(bundle: url, base: diskImageURL.resolvingSymlinksInPath(), reason: error.localizedDescription)
+            throw RuntimeFailure.incompatibleOverlay(
+                bundle: url.path, base: diskImageURL.resolvingSymlinksInPath().path, reason: error.localizedDescription)
         } catch {
-            throw ContainerizationError(
-                .invalidState,
-                message: "the overlay in \(url.path) does not stack on \(diskImageURL.resolvingSymlinksInPath().path)",
-                cause: error
-            )
+            throw RuntimeFailure.invalidState(
+                causedMessage("the overlay in \(url.path) does not stack on \(diskImageURL.resolvingSymlinksInPath().path)", cause: error))
         }
     }
 
@@ -179,7 +165,7 @@ public struct MacOSVMBundle: Sendable {
     /// Install macOS into the bundle before booting it.
     public static func create(at url: URL, hardwareModel: VZMacHardwareModel, diskSizeInBytes: UInt64) throws -> MacOSVMBundle {
         guard !FileManager.default.fileExists(atPath: url.path) else {
-            throw ContainerizationError(.exists, message: "\(url.path) already exists")
+            throw RuntimeFailure.exists("\(url.path) already exists")
         }
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         try createDiskImage(at: url.appendingPathComponent(diskImageName), sizeInBytes: diskSizeInBytes)
@@ -200,7 +186,7 @@ public struct MacOSVMBundle: Sendable {
         do {
             _ = try DiskImage(creating: .asif(url: diskImageURL, blockCount: blockCount, blockSize: blockSize))
         } catch {
-            throw ContainerizationError(.internalError, message: "failed to create \(diskImageURL.path)", cause: error)
+            throw RuntimeFailure.internalError(causedMessage("failed to create \(diskImageURL.path)", cause: error))
         }
     }
 
@@ -215,7 +201,7 @@ public struct MacOSVMBundle: Sendable {
     /// An instance of a layer bundle links its layer too, so the overlay stacks on base and layer.
     public func instance(at destination: URL) throws -> MacOSVMBundle {
         guard !hasOverlay else {
-            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
+            throw RuntimeFailure.unsupported("\(url.path) is a container's instance, not a bundle")
         }
         try checkDiskImageIsASIF()
         try Self.build(at: destination) { staging in
@@ -231,7 +217,7 @@ public struct MacOSVMBundle: Sendable {
     private static func build(at destination: URL, _ body: (URL) throws -> Void) throws {
         var isLink = stat()
         guard lstat(destination.path, &isLink) != 0 else {
-            throw ContainerizationError(.exists, message: "\(destination.path) already exists")
+            throw RuntimeFailure.exists("\(destination.path) already exists")
         }
         let staging = URL(fileURLWithPath: destination.path + ".parbake-new")
         try? FileManager.default.removeItem(at: staging)
@@ -239,9 +225,8 @@ public struct MacOSVMBundle: Sendable {
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
             try body(staging)
             guard renamex_np(staging.path, destination.path, UInt32(RENAME_EXCL)) == 0 else {
-                throw ContainerizationError(
-                    .internalError, message: "failed to move \(staging.path) to \(destination.path)",
-                    cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                throw RuntimeFailure.internalError(
+                    causedMessage("failed to move \(staging.path) to \(destination.path)", cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)))
             }
         } catch {
             try? FileManager.default.removeItem(at: staging)
@@ -258,11 +243,11 @@ public struct MacOSVMBundle: Sendable {
     /// are three levels.
     public func layerBundle(at destination: URL) throws -> MacOSVMBundle {
         guard !hasOverlay else {
-            throw ContainerizationError(.unsupported, message: "\(url.path) is a container's instance, not a bundle")
+            throw RuntimeFailure.unsupported("\(url.path) is a container's instance, not a bundle")
         }
         try checkDiskImageIsASIF()
         guard !hasLayer else {
-            throw ContainerizationError(.unsupported, message: "\(url.path) is a layer bundle; a layer stacks on a base bundle only")
+            throw RuntimeFailure.unsupported("\(url.path) is a layer bundle; a layer stacks on a base bundle only")
         }
         try copyBundleFiles(to: destination)
         let diskImageLink = try linkDiskImage(in: destination)
@@ -271,7 +256,7 @@ public struct MacOSVMBundle: Sendable {
             let base = try DiskImage(opening: .open(url: diskImageLink, mode: .readOnly))
             _ = try base.appending(.asifLayer(url: layerURL, type: .overlay))
         } catch {
-            throw ContainerizationError(.internalError, message: "failed to create \(layerURL.path)", cause: error)
+            throw RuntimeFailure.internalError(causedMessage("failed to create \(layerURL.path)", cause: error))
         }
         return try MacOSVMBundle(url: destination)
     }
@@ -318,9 +303,8 @@ public struct MacOSVMBundle: Sendable {
                 || FileManager.default.fileExists(atPath: staged.path)
             {
                 guard rename(staged.path, target.path) == 0 else {
-                    throw ContainerizationError(
-                        .internalError, message: "failed to move \(staged.path) to \(target.path)",
-                        cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                    throw RuntimeFailure.internalError(
+                        causedMessage("failed to move \(staged.path) to \(target.path)", cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)))
                 }
             } else if (try? FileManager.default.destinationOfSymbolicLink(atPath: target.path)) != nil
                 || FileManager.default.fileExists(atPath: target.path)
@@ -355,9 +339,10 @@ public struct MacOSVMBundle: Sendable {
             }
             _ = try stack.appending(.asifLayer(url: overlayURL, type: .overlay))
         } catch let error as IncompatibleStackingError {
-            throw IncompatibleOverlayError(bundle: url, base: diskImageURL.resolvingSymlinksInPath(), reason: error.localizedDescription)
+            throw RuntimeFailure.incompatibleOverlay(
+                bundle: url.path, base: diskImageURL.resolvingSymlinksInPath().path, reason: error.localizedDescription)
         } catch {
-            throw ContainerizationError(.internalError, message: "failed to create \(overlayURL.path)", cause: error)
+            throw RuntimeFailure.internalError(causedMessage("failed to create \(overlayURL.path)", cause: error))
         }
     }
 
@@ -372,14 +357,12 @@ public struct MacOSVMBundle: Sendable {
             }
             let cloneError = errno
             guard cloneError == EXDEV || cloneError == ENOTSUP else {
-                throw ContainerizationError(
-                    .internalError, message: "failed to clone \(source.path) to \(target.path)",
-                    cause: POSIXError(POSIXErrorCode(rawValue: cloneError) ?? .EIO))
+                throw RuntimeFailure.internalError(
+                    causedMessage("failed to clone \(source.path) to \(target.path)", cause: POSIXError(POSIXErrorCode(rawValue: cloneError) ?? .EIO)))
             }
             guard copyfile(source.path, target.path, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 else {
-                throw ContainerizationError(
-                    .internalError, message: "failed to copy \(source.path) to \(target.path)",
-                    cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO))
+                throw RuntimeFailure.internalError(
+                    causedMessage("failed to copy \(source.path) to \(target.path)", cause: POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)))
             }
         }
     }

@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Darwin
 
 /// A guest account name that is safe to put in a shell script and an ssh argument list.
@@ -41,14 +40,14 @@ public struct SudoCommand: RawRepresentable, Hashable, Sendable {
 }
 
 public enum ScriptInput {
-    /// Throws ContainerizationError(.invalidArgument) naming `field` when `value` holds a control
+    /// Throws `RuntimeFailure.invalidArgument` naming `field` when `value` holds a control
     /// character (U+0000-U+001F, U+007F) or the text "PARBAKE_".
     public static func check(_ value: String, field: String) throws {
         if value.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }) {
-            throw ContainerizationError(.invalidArgument, message: "\(field) must not contain control characters")
+            throw RuntimeFailure.invalidArgument("\(field) must not contain control characters")
         }
         if value.contains("PARBAKE_") {
-            throw ContainerizationError(.invalidArgument, message: "\(field) must not contain the text PARBAKE_")
+            throw RuntimeFailure.invalidArgument("\(field) must not contain the text PARBAKE_")
         }
     }
 }

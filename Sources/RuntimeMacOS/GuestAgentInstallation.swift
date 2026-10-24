@@ -33,7 +33,8 @@ public enum GuestAgentInstallation {
         """
 
     /// Shell commands, run as root, that install the staged binary and the property list and
-    /// (re)start the daemon.
+    /// (re)start the daemon. The bootstrap retries because launchd can still hold the old daemon
+    /// right after a boot, and then refuses it with an input/output error.
     public static let rootCommands = """
         install -d -m 0755 -o root -g wheel /usr/local/libexec
         install -m 0755 -o root -g wheel \(stagedPath) \(programPath)
@@ -46,7 +47,12 @@ public enum GuestAgentInstallation {
         plutil -lint -s \(propertyListPath).new
         mv \(propertyListPath).new \(propertyListPath)
         launchctl bootout system/\(label) 2>/dev/null || true
-        launchctl bootstrap system \(propertyListPath)
+        for attempt in 1 2 3 4 5; do
+            if launchctl bootstrap system \(propertyListPath); then break; fi
+            if [ "$attempt" = 5 ]; then exit 1; fi
+            sleep 2
+            launchctl bootout system/\(label) 2>/dev/null || true
+        done
 
         """
 
@@ -66,7 +72,7 @@ public enum GuestAgentInstallation {
             set -eu
             \(rootCommands)PARBAKE_ROOT
             )
-            printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
+            \(GuestCommands.asRoot)
             unset PARBAKE_PASSWORD
             echo '\(installedMarker)'
 

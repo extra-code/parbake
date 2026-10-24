@@ -56,7 +56,7 @@ extension ParbakeTool {
             print("Booted a throwaway instance of \(bundle)")
 
             do {
-                let address = try await waitForSSH(virtualMachine, shell: instanceShell)
+                let address = try await AgentSetup.waitForSSH(virtualMachine, shell: instanceShell, timeout: timeout)
                 print("SSH answers at \(address) after \(started.duration(to: .now))")
 
                 let install = instanceShell.run(
@@ -87,13 +87,20 @@ extension ParbakeTool {
 
                 let log = instanceShell.run("cat /tmp/parbake-agent.log", on: address)
                 print("Agent log: \(log.output.trimmingCharacters(in: .whitespacesAndNewlines))")
-                _ = instanceShell.run("sudo -n /sbin/shutdown -h now", on: address)
+                _ = instanceShell.run(GuestCommands.shutdown, on: address)
             } catch {
                 try? await virtualMachine.forceStop()
                 throw error
             }
-            if await virtualMachine.wait(timeout: .seconds(120)) == nil {
-                try? await virtualMachine.forceStop()
+            var forceStopFailed = false
+            _ = await GuestShutdown.run(
+                virtualMachine, request: { true }, requestWait: .seconds(120), powerButtonWait: .seconds(60),
+                note: { step, error in
+                    forceStopFailed = forceStopFailed || step == .forceStop
+                    AgentSetup.reportStopFailure(step, error)
+                })
+            if forceStopFailed {
+                throw ParbakeError.runtime("the guest did not shut down and may still be running")
             }
             print("Guest stopped; removed the instance")
         }
@@ -174,35 +181,21 @@ extension ParbakeTool {
             return (String(decoding: outData, as: UTF8.self), String(decoding: errData, as: UTF8.self), exit.exitCode)
         }
 
-        private func waitForSSH(_ virtualMachine: MacOSVirtualMachine, shell: GuestShell) async throws -> String {
-            let deadline = ContinuousClock.now + .seconds(timeout)
-            var leased: String?
-            while ContinuousClock.now < deadline {
-                if let address = DHCPLeases.currentAddress(for: virtualMachine.macAddress) {
-                    leased = address
-                    if shell.run("true", on: address).status == 0 { return address }
-                }
-                try await Task.sleep(for: .seconds(3))
-            }
-            if let leased {
-                throw ParbakeError.failure(.sshTimeout(username: shell.username, address: leased, seconds: timeout))
-            }
-            throw ParbakeError.failure(.dhcpTimeout(macAddress: virtualMachine.macAddress, seconds: timeout, leaseFile: DHCPLeases.path))
-        }
-
         private func dialAgent(_ virtualMachine: MacOSVirtualMachine) async throws -> Vminitd {
-            let deadline = ContinuousClock.now + .seconds(timeout)
             var lastError: (any Error)?
-            while ContinuousClock.now < deadline {
+            let agent = try await GuestReachability.poll(every: .seconds(1), timeout: .seconds(timeout)) { () async throws -> Vminitd? in
                 do {
                     let handle = try await virtualMachine.connect(toPort: Vminitd.port)
                     return try await Vminitd(connection: handle, group: MultiThreadedEventLoopGroup.singleton)
                 } catch {
                     lastError = error
-                    try await Task.sleep(for: .seconds(1))
+                    return nil
                 }
             }
-            throw ParbakeError.runtime("the agent did not accept a vsock connection: \(String(describing: lastError))")
+            guard let agent else {
+                throw ParbakeError.runtime("the agent did not accept a vsock connection: \(String(describing: lastError))")
+            }
+            return agent
         }
     }
 }

@@ -39,6 +39,31 @@ struct RuntimeFailureTests {
         Row(
             failure: .restoreImageMissing(path: "/r.ipsw"), contains: ["/r.ipsw", "--restore-image"], exitCode: 66, code: .notFound),
         Row(failure: .vmLimitReached, contains: ["two macOS guests", "stop one", "reboot the host", "slot"], exitCode: 69, code: .unsupported),
+        Row(
+            failure: .guestStopped(exitCode: 3), contains: ["the guest stopped with exit code 3 before it answered; boot it again and check the guest's console"], exitCode: 1, code: .interrupted),
+        Row(failure: .guestStopped(exitCode: nil), contains: ["the guest stopped before it answered; boot it again and check the guest's console"], exitCode: 1, code: .interrupted),
+        Row(failure: .internalError("cannot run /x: no such file"), contains: ["cannot run /x: no such file"], exitCode: 1, code: .internalError),
+        Row(
+            failure: .bundlePath(.notAbsolute("bundle")), contains: ["bundle is not an absolute path"], exitCode: 1, code: .invalidArgument),
+        Row(
+            failure: .bundlePath(.badRootsFile(path: "/r", reason: "line 1: x does not exist")), contains: ["/r: line 1: x does not exist"], exitCode: 1,
+            code: .invalidArgument),
+        Row(
+            failure: .incompatibleOverlay(bundle: "/b", base: "/base/Disk.img", reason: "not a stack"),
+            contains: ["the overlay in /b does not stack on /base/Disk.img: not a stack"], exitCode: 1, code: .invalidState),
+        Row(
+            failure: .agentVersionMismatch(agentVersion: "2 0.1.0"), contains: ["version \"2 0.1.0\"", "protocol 1", "parbake agent install"], exitCode: 1,
+            code: .timeout),
+        Row(
+            failure: .processLost(id: "p1", cause: "CancellationError()"), contains: ["lost process p1 in the guest: CancellationError()"], exitCode: 1,
+            code: .interrupted),
+        Row(failure: .invalidArgument("bad value"), contains: ["bad value"], exitCode: 1, code: .invalidArgument),
+        Row(failure: .invalidState("not stopped"), contains: ["not stopped"], exitCode: 1, code: .invalidState),
+        Row(failure: .notFound("no such process"), contains: ["no such process"], exitCode: 1, code: .notFound),
+        Row(failure: .unsupported("no mounts"), contains: ["no mounts"], exitCode: 1, code: .unsupported),
+        Row(failure: .interrupted("stopped"), contains: ["stopped"], exitCode: 1, code: .interrupted),
+        Row(failure: .timeout("too slow"), contains: ["too slow"], exitCode: 1, code: .timeout),
+        Row(failure: .exists("/b already exists"), contains: ["/b already exists"], exitCode: 1, code: .exists),
     ]
 
     @Test(arguments: rows)

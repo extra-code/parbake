@@ -149,14 +149,15 @@ actor RuntimeService {
                     memoryInBytes: configuration.resources.memoryInBytes,
                     network: network
                 )
-            } catch let error as MacOSVMBundle.IncompatibleOverlayError {
+            } catch let failure as RuntimeFailure {
+                guard case .incompatibleOverlay(_, _, let reason) = failure else { throw failure }
                 guard policy == .discard else {
                     throw ContainerizationError(
                         .invalidState,
-                        message: "\(error); set --label \(Self.incompatibleOverlayLabel)=discard to start the instance over"
+                        message: "\(failure); set --label \(Self.incompatibleOverlayLabel)=discard to start the instance over"
                     )
                 }
-                log.warning("discarding the instance's overlay, it no longer stacks on the bundle", metadata: ["reason": "\(error.reason)"])
+                log.warning("discarding the instance's overlay, it no longer stacks on the bundle", metadata: ["reason": "\(reason)"])
                 try bundle.resetOverlay(from: sourceBundle)
                 virtualMachine = try MacOSVirtualMachine(
                     bundle: bundle,
@@ -373,7 +374,7 @@ actor RuntimeService {
     private func processExit(id: String, virtualMachine: MacOSVirtualMachine) async throws -> GuestExit {
         do {
             return try await runningAgent().wait(id: id)
-        } catch is GuestAgent.ProcessLost {
+        } catch RuntimeFailure.processLost {
             let guest = await virtualMachine.wait(timeout: RuntimeLifecycle.guestLossTimeout)
             throw ContainerizationError(
                 .interrupted, message: RuntimeLifecycle.lostProcessMessage(processID: id, guestExitCode: guest?.exitCode))

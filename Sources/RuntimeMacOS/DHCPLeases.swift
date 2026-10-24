@@ -30,7 +30,7 @@ public enum DHCPLeases {
                 continue
             }
             let lease = fields["lease"].flatMap { UInt64($0.replacingOccurrences(of: "0x", with: ""), radix: 16) } ?? 0
-            if newest == nil || lease >= newest!.lease {
+            if newest.map({ lease >= $0.lease }) ?? true {
                 newest = (address, lease)
             }
         }

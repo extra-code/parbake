@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 
 /// The preparation of a freshly provisioned guest account over SSH.
@@ -16,9 +15,8 @@ public enum GuestPreparation {
     /// only the characters A-Z a-z 0-9 . _ / + -.
     public static func checkSudoCommand(_ command: String) throws {
         guard SudoCommand(rawValue: command) != nil else {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "sudo command \(command) must be an absolute command path with no arguments or wildcards, using only the characters A-Z a-z 0-9 . _ / + -")
+            throw RuntimeFailure.invalidArgument(
+                "sudo command \(command) must be an absolute command path with no arguments or wildcards, using only the characters A-Z a-z 0-9 . _ / + -")
         }
     }
 
@@ -35,7 +33,7 @@ public enum GuestPreparation {
         username: String, password: String, publicKeys: [String], tidy: Bool, installAgent: Bool = false, sudoCommands: [String] = []
     ) throws -> String {
         guard GuestUsername(rawValue: username) != nil else {
-            throw ContainerizationError(.invalidArgument, message: "username \(username) must be \(GuestUsername.rule)")
+            throw RuntimeFailure.invalidArgument("username \(username) must be \(GuestUsername.rule)")
         }
         try ScriptInput.check(password, field: "password")
         for key in publicKeys {
@@ -48,7 +46,7 @@ public enum GuestPreparation {
         let userTidy = tidy ? "rm -rf \"$HOME\"/Library/Caches/* 2>/dev/null || true\n" : ""
         let rootTidy = tidy ? "mdutil -a -i off >/dev/null\nmdutil -a -E >/dev/null 2>&1 || true\nrm -rf /Library/Caches/* 2>/dev/null || true\n" : ""
         let rootAgent = installAgent ? GuestAgentInstallation.rootCommands : ""
-        let shutdown = installAgent ? "" : "sudo -n /sbin/shutdown -h now >/dev/null\n"
+        let shutdown = installAgent ? "" : GuestCommands.shutdownDiscardingOutput + "\n"
         return """
             set -eu
             umask 077
@@ -67,7 +65,7 @@ public enum GuestPreparation {
             mv /etc/sudoers.d/parbake.new /etc/sudoers.d/parbake
             \(rootTidy)\(rootAgent)PARBAKE_ROOT
             )
-            printf '%s\\n' "$PARBAKE_PASSWORD" | sudo -S -p '' /bin/sh -c "$PARBAKE_ROOT"
+            \(GuestCommands.asRoot)
             unset PARBAKE_PASSWORD
             \(passwordlessCommands.map { "sudo -n -l \($0) >/dev/null" }.joined(separator: "\n"))
             echo '\(preparedMarker)'

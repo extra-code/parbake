@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
+import ContainerizationError
 import Foundation
 import Testing
+import vmnet
 
 @testable import RuntimeMacOS
 
@@ -442,5 +444,157 @@ struct DHCPMessageTests {
         #expect(DHCPMessage.mask(prefixLength: 24) == [255, 255, 255, 0])
         #expect(DHCPMessage.mask(prefixLength: 18) == [255, 255, 192, 0])
         #expect(DHCPMessage.mask(prefixLength: 30) == [255, 255, 255, 252])
+    }
+}
+
+struct GuestSecurityRunnerTests {
+    private func stub(_ body: String) throws -> (directory: URL, tool: String) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("security-stub-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let tool = directory.appendingPathComponent("security")
+        try Data(body.utf8).write(to: tool)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: tool.path)
+        return (directory, tool.path)
+    }
+
+    @Test
+    func testTheStatusAndStandardErrorReachTheCaller() throws {
+        let (directory, tool) = try stub("#!/bin/sh\ncat > /dev/null\necho 'user interaction is not allowed' >&2\nexit 36\n")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let result = try GuestCredentials.security(["find-generic-password", "-s", "svc"], securityPath: tool)
+        #expect(result.status == 36)
+        #expect(result.output == "")
+        #expect(result.errorOutput == "user interaction is not allowed\n")
+    }
+
+    @Test
+    func testTheCommandReachesTheToolOnStandardInputAndItsOutputIsReturned() throws {
+        let (directory, tool) = try stub("#!/bin/sh\ncat\n")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let result = try GuestCredentials.security(["add-generic-password", "-w", "se\"cret"], securityPath: tool)
+        #expect(result.status == 0)
+        #expect(result.output == "\"add-generic-password\" \"-w\" \"se\\\"cret\"\n")
+        #expect(result.errorOutput == "")
+    }
+}
+
+/// The code and printed text of the errors the guest I/O files throw, whatever type carries them.
+struct GuestIOErrorTextTests {
+    private struct Cause: Error, CustomStringConvertible {
+        let description = "boom"
+    }
+
+    private static func observe(_ body: () async throws -> Void) async -> (code: ContainerizationError.Code, text: String)? {
+        do {
+            try await body()
+            return nil
+        } catch {
+            guard let mapped = RuntimeLifecycle.containerizationError(from: error) as? ContainerizationError else {
+                return nil
+            }
+            return (mapped.code, mapped.localizedDescription)
+        }
+    }
+
+    private static func expect(
+        _ body: () async throws -> Void, code: ContainerizationError.Code, text: String, sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        let seen = await observe(body)
+        #expect(seen?.code == code, sourceLocation: sourceLocation)
+        #expect(seen?.text == text, sourceLocation: sourceLocation)
+    }
+
+    @Test
+    func aKeychainStatusFailureNamesTheAction() {
+        let error = GuestCredentials.failure(status: 12, service: "svc", "probe the keychain")
+        let mapped = RuntimeLifecycle.containerizationError(from: error) as? ContainerizationError
+        #expect(mapped?.code == .internalError)
+        #expect(mapped?.localizedDescription == "failed to probe the keychain: keychain status 12")
+    }
+
+    @Test
+    func aSecurityFailureNamesTheReason() {
+        let withReason = GuestCredentials.SecurityResult(status: 3, output: "", errorOutput: "boom\n")
+        let without = GuestCredentials.SecurityResult(status: 3, output: "", errorOutput: " \n")
+        let first = RuntimeLifecycle.containerizationError(from: GuestCredentials.error(withReason, "probe the keychain")) as? ContainerizationError
+        let second = RuntimeLifecycle.containerizationError(from: GuestCredentials.error(without, "probe the keychain")) as? ContainerizationError
+        #expect(first?.code == .internalError)
+        #expect(first?.localizedDescription == "failed to probe the keychain: boom")
+        #expect(second?.code == .internalError)
+        #expect(second?.localizedDescription == "failed to probe the keychain: exit status 3")
+    }
+
+    @Test
+    func aPasswordWithANewlineIsRefused() async {
+        await Self.expect(
+            { try GuestCredentials(service: "svc", access: .anyApplication).store("a\nb", for: "user") },
+            code: .invalidArgument, text: "a keychain password cannot contain a newline")
+    }
+
+    @Test
+    func aSudoCommandThatIsNoPathIsRefused() async {
+        await Self.expect(
+            { try GuestPreparation.checkSudoCommand("rm -rf") }, code: .invalidArgument,
+            text:
+                "sudo command rm -rf must be an absolute command path with no arguments or wildcards, using only the characters A-Z a-z 0-9 . _ / + -"
+        )
+    }
+
+    @Test
+    func anUnsafeUsernameIsRefused() async {
+        await Self.expect(
+            { _ = try GuestPreparation.script(username: "Bad Name", password: "pw", publicKeys: [], tidy: false) },
+            code: .invalidArgument,
+            text: "username Bad Name must be 1 to 31 characters: a lowercase letter or _ first, then a-z, 0-9, _ or -")
+    }
+
+    @Test
+    func aRestoreImageValueWithoutAFileNameIsRefused() async {
+        await Self.expect(
+            { _ = try RestoreImageSource("https://") }, code: .invalidArgument, text: "https:// is no restore image URL")
+    }
+
+    @Test
+    func aDownloadThatDoesNotLoadIsDeletedAndNamesItsCause() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-cache-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let cache = RestoreImageCache(directory: directory)
+        let url = try #require(URL(string: "https://mirror.example/Image.ipsw"))
+        let file = cache.file(for: url)
+        await Self.expect(
+            {
+                _ = try await cache.fetch(url, download: { _, destination in try Data("x".utf8).write(to: destination) }, verify: { _ in throw Cause() })
+            },
+            code: .invalidState,
+            text: "\(file.path) is no restore image Virtualization.framework can load; it was deleted, run create again (cause: \"boom\")")
+    }
+
+    @Test
+    func aFailedCurlNamesTheStatus() async throws {
+        let url = try #require(URL(string: "https://example.invalid/image.ipsw"))
+        await Self.expect(
+            { try await RestoreImageCache.curl(url, to: URL(fileURLWithPath: "/tmp/never"), executable: URL(fileURLWithPath: "/usr/bin/false")) },
+            code: .internalError,
+            text: "downloading https://example.invalid/image.ipsw failed (curl exit status 1); run create again to resume")
+    }
+
+    @Test
+    func anExistingBundleIsNotReplacedByDefault() async throws {
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent("parbake-exists-\(UUID())")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: target) }
+        await Self.expect(
+            { try await BundleReplacement.build(at: target, replacing: false) { _ in } }, code: .exists,
+            text: "\(target.path) already exists; pass --replace to rebuild it")
+    }
+
+    @Test
+    func theDHCPInterfaceFailuresNameTheStatus() {
+        let start = RuntimeLifecycle.containerizationError(from: GuestDHCPServer.startFailure(.VMNET_FAILURE)) as? ContainerizationError
+        let watch = RuntimeLifecycle.containerizationError(from: GuestDHCPServer.watchFailure(.VMNET_FAILURE)) as? ContainerizationError
+        #expect(start?.code == .internalError)
+        #expect(start?.localizedDescription == "failed to start the DHCP interface on the vmnet network, status 1001")
+        #expect(watch?.code == .internalError)
+        #expect(watch?.localizedDescription == "failed to watch the DHCP interface, status 1001")
     }
 }

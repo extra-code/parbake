@@ -74,13 +74,11 @@ public enum RuntimeLifecycle {
         return "\(list) \(verb) not supported for macOS guests; remove the \(flags.count == 1 ? "option" : "options")"
     }
 
-    /// The error the runtime reports to the client for `error`: a bundle path refusal becomes
-    /// `.invalidArgument` and a runtime failure its own code, both with their description; any other
-    /// error passes through unchanged.
+    /// The error the runtime reports to the client for `error`: a runtime failure becomes a
+    /// `ContainerizationError` with its own code and its description; any other error passes through
+    /// unchanged.
     public static func containerizationError(from error: any Error) -> any Error {
         switch error {
-        case let error as BundlePathError:
-            ContainerizationError(.invalidArgument, message: error.description)
         case let failure as RuntimeFailure:
             ContainerizationError(failure.containerizationCode, message: failure.description)
         default:

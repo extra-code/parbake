@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 import Virtualization
 
@@ -18,7 +17,7 @@ public enum RestoreImageSource: Equatable, Sendable {
             return
         }
         guard let url = URL(string: value), !url.lastPathComponent.isEmpty, url.lastPathComponent != "/" else {
-            throw ContainerizationError(.invalidArgument, message: "\(value) is no restore image URL")
+            throw RuntimeFailure.invalidArgument("\(value) is no restore image URL")
         }
         self = .url(url)
     }
@@ -73,9 +72,8 @@ public struct RestoreImageCache: Sendable {
             try await verify(file)
         } catch {
             try? FileManager.default.removeItem(at: file)
-            throw ContainerizationError(
-                .invalidState, message: "\(file.path) is no restore image Virtualization.framework can load; it was deleted, run create again",
-                cause: error)
+            throw RuntimeFailure.invalidState(
+                "\(file.path) is no restore image Virtualization.framework can load; it was deleted, run create again (cause: \"\(error)\")")
         }
         FileManager.default.createFile(atPath: file.appendingPathExtension(Self.completeSuffix).path, contents: nil)
         return file
@@ -107,15 +105,17 @@ public struct RestoreImageCache: Sendable {
     /// Downloads `url` to `file` with curl, which resumes from a partial file and shows progress;
     /// URLSession keeps no resume data across runs.
     public static func curl(_ url: URL, to file: URL) async throws {
-        let curl = Process()
-        curl.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
-        curl.arguments = ["--fail", "--location", "--continue-at", "-", "--output", file.path, url.absoluteString]
-        try curl.run()
-        curl.waitUntilExit()
-        guard curl.terminationStatus == 0 else {
-            throw ContainerizationError(
-                .internalError,
-                message: "downloading \(url.absoluteString) failed (curl exit status \(curl.terminationStatus)); run create again to resume")
+        try await curl(url, to: file, executable: URL(fileURLWithPath: "/usr/bin/curl"))
+    }
+
+    /// `curl(_:to:)` with the curl executable chosen by the caller; tests pass a stub.
+    static func curl(_ url: URL, to file: URL, executable: URL) async throws {
+        let result = try await HostProcess.run(
+            executable, arguments: ["--fail", "--location", "--continue-at", "-", "--output", file.path, url.absoluteString],
+            stdout: .inherit, stderr: .inherit)
+        guard result.status == 0 else {
+            throw RuntimeFailure.internalError(
+                "downloading \(url.absoluteString) failed (curl exit status \(result.status)); run create again to resume")
         }
     }
 
@@ -148,7 +148,7 @@ public enum BundleReplacement {
         let fileManager = FileManager.default
         guard replacing, fileManager.fileExists(atPath: target.path) else {
             guard !fileManager.fileExists(atPath: target.path) else {
-                throw ContainerizationError(.exists, message: "\(target.path) already exists; pass --replace to rebuild it")
+                throw RuntimeFailure.exists("\(target.path) already exists; pass --replace to rebuild it")
             }
             do {
                 try await build(target)

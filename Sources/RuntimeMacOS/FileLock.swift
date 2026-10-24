@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import Foundation
 
 /// An exclusive advisory lock on a file, held until `release()` or deallocation.
@@ -27,12 +26,12 @@ public final class FileLock: @unchecked Sendable {
     public static func acquire(_ url: URL, wait: Bool, holder: String) throws -> FileLock {
         let fd = open(url.path, O_RDWR | O_CREAT | O_CLOEXEC, 0o644)
         guard fd >= 0 else {
-            throw ContainerizationError(.internalError, message: "opening the lock file \(url.path) failed: \(String(cString: strerror(errno)))")
+            throw RuntimeFailure.internalError("opening the lock file \(url.path) failed: \(String(cString: strerror(errno)))")
         }
         do {
             if flock(fd, LOCK_EX | LOCK_NB) != 0 {
                 guard errno == EWOULDBLOCK else {
-                    throw ContainerizationError(.internalError, message: "locking \(url.path) failed: \(String(cString: strerror(errno)))")
+                    throw RuntimeFailure.internalError("locking \(url.path) failed: \(String(cString: strerror(errno)))")
                 }
                 guard wait else {
                     throw RuntimeFailure.lockHeld(path: url.path, holder: recordedHolder(fd))
@@ -70,7 +69,7 @@ public final class FileLock: @unchecked Sendable {
         FileHandle.standardError.write(Data((notice + "\n").utf8))
         while flock(fd, LOCK_EX) != 0 {
             guard errno == EINTR else {
-                throw ContainerizationError(.internalError, message: "locking \(path) failed: \(String(cString: strerror(errno)))")
+                throw RuntimeFailure.internalError("locking \(path) failed: \(String(cString: strerror(errno)))")
             }
         }
     }

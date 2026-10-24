@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Christian Semmelmann
 // SPDX-License-Identifier: Apache-2.0
 
-import ContainerizationError
 import DiskImageKit
 import Foundation
 import ParbakeVersion
@@ -65,7 +64,7 @@ struct MacOSVMBundleTests {
         #expect {
             try MacOSVMBundle(url: directory)
         } throws: { error in
-            (error as? ContainerizationError)?.code == .invalidState && "\(error)".contains("is an incomplete instance; remove the container")
+            (error as? RuntimeFailure)?.containerizationCode == .invalidState && "\(error)".contains("is an incomplete instance; remove the container")
         }
     }
 
@@ -82,7 +81,7 @@ struct MacOSVMBundleTests {
         #expect {
             try MacOSVMBundle(url: directory)
         } throws: { error in
-            (error as? ContainerizationError)?.code == .invalidState
+            (error as? RuntimeFailure)?.containerizationCode == .invalidState
         }
     }
 
@@ -263,7 +262,7 @@ struct InstanceTests {
             #expect {
                 try build()
             } throws: { error in
-                (error as? ContainerizationError)?.code == .unsupported && "\(error)".contains("is a container's instance, not a bundle")
+                (error as? RuntimeFailure)?.containerizationCode == .unsupported && "\(error)".contains("is a container's instance, not a bundle")
             }
         }
         #expect(!FileManager.default.fileExists(atPath: second.path))
@@ -283,9 +282,9 @@ struct InstanceTests {
         #expect {
             try instance.storageDeviceAttachment()
         } throws: { error in
-            (error as? ContainerizationError)?.code == .invalidState
+            (error as? RuntimeFailure)?.containerizationCode == .invalidState
         }
-        #expect(throws: ContainerizationError.self) { try MacOSVMBundle(url: destination) }
+        #expect(throws: RuntimeFailure.self) { try MacOSVMBundle(url: destination) }
     }
 }
 
@@ -317,7 +316,9 @@ struct ResetOverlayTests {
         // A new install replaces the base disk image at the same path, with a new layer UUID.
         try FileManager.default.removeItem(at: source.diskImageURL)
         try MacOSVMBundle.createDiskImage(at: source.diskImageURL, sizeInBytes: 1 << 30)
-        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try instance.storageDeviceAttachment() }
+        #expect(
+            performing: { try instance.storageDeviceAttachment() },
+            throws: { if case RuntimeFailure.incompatibleOverlay = $0 { true } else { false } })
 
         try instance.resetOverlay(from: source)
 
@@ -441,8 +442,12 @@ struct LayerBundleTests {
         try FileManager.default.removeItem(at: instance.diskImageURL)
         try FileManager.default.createSymbolicLink(at: instance.diskImageURL, withDestinationURL: other.appendingPathComponent(MacOSVMBundle.diskImageName))
 
-        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try instance.storageDeviceAttachment() }
-        #expect(throws: MacOSVMBundle.IncompatibleOverlayError.self) { try layer.instance(at: temporaryURL("vm-instance")) }
+        #expect(
+            performing: { try instance.storageDeviceAttachment() },
+            throws: { if case RuntimeFailure.incompatibleOverlay = $0 { true } else { false } })
+        #expect(
+            performing: { try layer.instance(at: temporaryURL("vm-instance")) },
+            throws: { if case RuntimeFailure.incompatibleOverlay = $0 { true } else { false } })
     }
 
     @Test
