@@ -3,8 +3,9 @@
 ## Status
 
 - State:   in progress
-- Updated: 2026-10-21
-- Next:    step 7 (upstream) needs the organisation name; step 4 an Xcode download, step 5 a signing identity
+- Updated: 2026-10-25
+- Next:    step 7 (upstream) needs the organisation name; step 4 an Xcode download; step 5 can rerun with
+  the identity of ADR 0010
 
 ---
 
@@ -29,6 +30,9 @@ kernel-flag warning, and the exit handler without `config.json`.
 Linux and macOS jobs side by side on one Mac mini through the same `container` CLI: a macOS job gets
 a fresh guest from a shared base, runs as a CI user in a logged-in session, reaches Linux service
 containers and corporate services, and is discarded afterwards.
+
+Guests boot only from bundles that `parbake` installs from an IPSW (macOS 27 provisioning).
+Importing disk images of other VM tools is out of scope.
 
 ## Done (2026-10-18)
 
@@ -101,20 +105,24 @@ was stopped forcibly versus a job that failed.
 
 `parbake layer` builds a layer bundle from a script; verified with the Command Line Tools as the
 layer. Open: an Xcode layer (Xcode needs a download from a signed-in account, so the operator
-provides the file), the cache layer on a network volume, image distribution (open decision 3).
+provides the file), the cache layer on a network volume, image distribution (open decision 2).
+Once distribution is decided: how a container names its bundle, by the `runtime-macos.bundle` label as
+today, by opaque `runtimeData` (apple/container#1569), or by a passthrough flag.
 
 
 macOS base (ASIF, read-only) → Xcode layer (read-only) → overlay per job; at most three levels
 (Apple: keep stacks shallow). Needs a way to produce the Xcode layer: install Xcode in an overlay on
 the base and keep that overlay as the next read-only layer. Cache layer for a base on a network
-volume. Then the image distribution question (open decision 3).
+volume. Then the image distribution question (open decision 2).
 
 ### 5. Save and restore state spike — restore blocked
 
 `parbake state-probe` saved a running guest, but restore failed across tested combinations of
 instance, overlay and machine identifier with a Virtualization.framework error. The failure also
 occurred without an overlay. The test used ad-hoc signing; whether saved state depends on signing
-identity remains unverified. Next: rerun with a stable development signing identity (open decision).
+identity remains unverified. Next: rerun signed with the identity of ADR 0010
+(`PARBAKE_CODESIGN_IDENTITY`), on a disposable clone. If restore works, decide whether restored
+containers may share one machine identifier, since restore requires the saved configuration.
 
 
 `saveMachineStateTo`/`restoreMachineStateFrom` for a booted, logged-in guest: compare startup from a
@@ -131,20 +139,31 @@ declarative.
 
 ### 7. Upstream
 
-Publish the Discussion at apple/container (organisation name: open decision 2), then a PR with the
-`[runtimeConfig]` hooks and the exit-handler fix. Rebase the fork on `main` before each
+Publish the Discussion at apple/container (organisation name: open decision 1), then a PR with the
+`[runtimeConfig]` hooks and the exit-handler fix. The Discussion draft is kept outside the repository;
+move its permalinks to the fork's base before posting. Run the fork's integration tests before the PR. Rebase the fork on `main` before each
 step; keep the plugin's containerization pin equal to `main`'s `scVersion`.
 
 ### Side track
 
 - An SSH entry by name for macOS guests in `parbake` (ADR 0005 conveniences).
+- Host directories in the guest: the runtime refuses `--volume` and `--mount`, so a cache that
+  outlives a job has no shared host directory. Approach: a `VZVirtioFileSystemDeviceConfiguration`
+  from the container's mounts in bootstrap, and `mount_virtiofs` in the guest through the agent at
+  the requested path. Write a spec first, then test with a cache directory on the host.
+- `parbake agent install … | tail -1` printed `See 'parbake --help'` twice in script runs although
+  the install worked; two direct reruns were clean. If it recurs, capture the full output.
+- A distinct exit code for a guest lost during `exec` needs apple/container to pass a failure kind
+  through `container exec`, an upstream change. ADR 0008 states the current rule.
 
 ## Open decisions (the user's)
 
-1. Under which organisation name do the Discussion and the PR go out?
+1. Under which organisation name do the Discussion and the PR go out? The fork lives under `extra-code`.
 2. Image distribution: OCI artifacts in a registry or `container`'s content store?
-3. Stable signing identity (Developer ID) instead of ad-hoc signing, for Local Network and keychain
-   identity across updates?
+3. A Developer ID for distributed builds? An Apple Development identity covers local use and the
+   keychain ACL (ADR 0010).
+4. `parbake create --config` reads TOML through TOMLDecoder, the first non-Apple dependency besides
+   gRPC. Keep it, or switch the format to JSON (Foundation only)?
 
 ## Verification
 
