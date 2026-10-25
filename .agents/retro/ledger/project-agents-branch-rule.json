@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261022T095218Z-9823ce40.json"
+  ],
+  "first_seen": "2026-10-22T09:52:18Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-4",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-agents-branch-rule",
+  "kind": "pitfall",
+  "last_seen": "2026-10-22T09:52:18Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "AGENTS.md forbids agent-created branches while a pasted goal prompt names hex/<slug>",
+  "v": 1,
+  "versions": []
+}

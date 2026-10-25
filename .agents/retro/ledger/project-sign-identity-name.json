@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261024T211729Z-022cb676.json"
+  ],
+  "first_seen": "2026-10-24T21:17:28Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-3",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-sign-identity-name",
+  "kind": "pitfall",
+  "last_seen": "2026-10-24T21:17:28Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "PARBAKE_CODESIGN_IDENTITY needs the identity name; a SHA-1 hash fails sign:identity",
+  "v": 1,
+  "versions": []
+}

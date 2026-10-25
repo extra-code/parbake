@@ -1,0 +1,23 @@
+{
+  "artifact": "swift-quality",
+  "cost_min": 0,
+  "entries": [
+    "20261024T183006Z-fb4b9ebc.json"
+  ],
+  "first_seen": "2026-10-24T18:30:06Z",
+  "fixed": null,
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "swift-quality-sync-bridge",
+  "kind": "pitfall",
+  "last_seen": "2026-10-24T18:30:06Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "high",
+  "status": "open",
+  "title": "SW-CONC-15 semaphore bridge deadlocks over swift-subprocess on the cooperative pool",
+  "v": 1,
+  "versions": [
+    "ghcr.io/ocx-sh/lore/swift-quality@sha256:bb11fc764f95093e4427990ed64b15b74173979ef3c8c8af111b7600f054a879"
+  ]
+}

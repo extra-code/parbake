@@ -1,0 +1,23 @@
+{
+  "artifact": "hex-loop",
+  "cost_min": 0,
+  "entries": [
+    "20261024T150452Z-627211d3.json"
+  ],
+  "first_seen": "2026-10-24T15:04:52Z",
+  "fixed": null,
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "hex-loop-goal-stop-hook",
+  "kind": "defect",
+  "last_seen": "2026-10-24T15:04:52Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "medium",
+  "status": "open",
+  "title": "Goal stop hook rejects a DONE whose unmet criteria all need a human step",
+  "v": 1,
+  "versions": [
+    "ghcr.io/michael-herwig/arcana/hex-loop@sha256:59ccc12245adfa8e0f7531ae3edb819acefeda012f8f37b2c8e8df4402b3ff7f"
+  ]
+}

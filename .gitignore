@@ -1,5 +1,12 @@
 .build/
 .swiftpm/
 .handoffs/
+.agents/worktrees/
 .DS_Store
 .vscode
+
+# Installed by `grim install` from grimoire.lock
+.claude/rules/
+.claude/skills/
+.agents/skills/
+container-runtime-macos-proposal.md

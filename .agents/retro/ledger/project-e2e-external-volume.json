@@ -1,0 +1,31 @@
+{
+  "artifact": "project",
+  "cost_min": 191.9,
+  "entries": [
+    "20261023T164549Z-fa02f194.json",
+    "20261023T224507Z-c26ab39e.json",
+    "20261024T211730Z-b2f049ca.json"
+  ],
+  "first_seen": "2026-10-23T16:45:49Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-2",
+    "stale_versions": [
+      "ghcr.io/michael-herwig/arcana/hex-execute@sha256:b74c31371e0861a500b15b48b2f80733477ac454b449967d816b19a9ddbe01c2"
+    ]
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-e2e-external-volume",
+  "kind": "pitfall",
+  "last_seen": "2026-10-24T21:17:28Z",
+  "occurrences": 3,
+  "scope": "project",
+  "severity": "high",
+  "status": "fixed",
+  "title": "Bundles on an external volume block the first boot on the removable-volume prompt",
+  "v": 1,
+  "versions": [
+    "ghcr.io/michael-herwig/arcana/hex-execute@sha256:b74c31371e0861a500b15b48b2f80733477ac454b449967d816b19a9ddbe01c2"
+  ]
+}

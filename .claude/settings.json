@@ -1,0 +1,10 @@
+{
+  "claudeMdExcludes": [
+    "**/.claude/rules/code-docs/**",
+    "**/.claude/rules/docs-quality/**",
+    "**/.claude/rules/swift-package/**",
+    "**/.claude/rules/swift-quality/**",
+    "**/.claude/rules/powershell-quality/**",
+    "**/.claude/rules/shell-quality/**"
+  ]
+}

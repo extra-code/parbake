@@ -1,0 +1,23 @@
+{
+  "artifact": "hex-loop",
+  "cost_min": 0,
+  "entries": [
+    "20261022T095218Z-3d5b7099.json"
+  ],
+  "first_seen": "2026-10-22T09:52:18Z",
+  "fixed": null,
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "hex-loop-paste-budget",
+  "kind": "inconvenient",
+  "last_seen": "2026-10-22T09:52:18Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "low",
+  "status": "open",
+  "title": "Goal paste exceeds 4000 chars for sources with many requirements; titles re-cut by hand",
+  "v": 1,
+  "versions": [
+    "ghcr.io/michael-herwig/arcana/hex-loop@sha256:59ccc12245adfa8e0f7531ae3edb819acefeda012f8f37b2c8e8df4402b3ff7f"
+  ]
+}

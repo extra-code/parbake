@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261022T181210Z-88fc3a43.json"
+  ],
+  "first_seen": "2026-10-22T18:12:10Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-6",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-review-brief-records",
+  "kind": "inconvenient",
+  "last_seen": "2026-10-22T18:12:10Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "Review brief cited host-run defect records that no tracked file held",
+  "v": 1,
+  "versions": []
+}

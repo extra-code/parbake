@@ -1,0 +1,26 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261018T125333Z-88d84a7e.json",
+    "20261018T125340Z-c4adbfdd.json"
+  ],
+  "first_seen": "2026-10-18T12:53:33Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-5",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-git-signing-setup",
+  "kind": "pitfall",
+  "last_seen": "2026-10-18T12:53:40Z",
+  "occurrences": 2,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "Commit signing fails when the repo-local signing key path or ssh-agent state does not match the machine",
+  "v": 1,
+  "versions": []
+}

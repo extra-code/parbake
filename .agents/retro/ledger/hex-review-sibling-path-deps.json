@@ -1,0 +1,23 @@
+{
+  "artifact": "hex-review",
+  "cost_min": 0,
+  "entries": [
+    "20261022T100904Z-e204badf.json"
+  ],
+  "first_seen": "2026-10-22T10:09:04Z",
+  "fixed": null,
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "hex-review-sibling-path-deps",
+  "kind": "pitfall",
+  "last_seen": "2026-10-22T10:09:04Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "medium",
+  "status": "open",
+  "title": "Review scratch worktrees break on relative sibling path dependencies",
+  "v": 1,
+  "versions": [
+    "ghcr.io/michael-herwig/arcana/hex-review@sha256:843ba7b434ad2a1d9cc7935b219b79286ce0767c7e1f2d6f95b324bb1acce536"
+  ]
+}

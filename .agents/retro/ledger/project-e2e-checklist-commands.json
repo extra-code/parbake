@@ -1,0 +1,26 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261024T211728Z-d721bc14.json",
+    "20261025T081540Z-6198094a.json"
+  ],
+  "first_seen": "2026-10-24T21:17:28Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "report .agents/retro/reports/2026-10-25.md P-1",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-e2e-checklist-commands",
+  "kind": "defect",
+  "last_seen": "2026-10-25T08:15:40Z",
+  "occurrences": 2,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "E2E checklist commands misfire: zsh log builtin, pkill -f overmatching",
+  "v": 1,
+  "versions": []
+}

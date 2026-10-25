@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261022T175742Z-8591d6bb.json"
+  ],
+  "first_seen": "2026-10-22T17:57:42Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "docs/end_to_end_checklist.md",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-e2e-checklist-early",
+  "kind": "inconvenient",
+  "last_seen": "2026-10-22T17:57:42Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "E2E checklist used guest sudo, log show without --info and an ineffective stale-agent step",
+  "v": 1,
+  "versions": []
+}

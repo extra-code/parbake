@@ -1,0 +1,23 @@
+{
+  "artifact": "hex-execute",
+  "cost_min": 0,
+  "entries": [
+    "20261022T175739Z-63b6e17b.json"
+  ],
+  "first_seen": "2026-10-22T17:57:39Z",
+  "fixed": null,
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "hex-execute-duplicate-worker",
+  "kind": "pitfall",
+  "last_seen": "2026-10-22T17:57:39Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "medium",
+  "status": "open",
+  "title": "A replacement worker started while the old one still ran host steps on the same checkout",
+  "v": 1,
+  "versions": [
+    "ghcr.io/michael-herwig/arcana/hex-execute@sha256:b74c31371e0861a500b15b48b2f80733477ac454b449967d816b19a9ddbe01c2"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261022T175741Z-9e9743f3.json"
+  ],
+  "first_seen": "2026-10-22T17:57:41Z",
+  "fixed": {
+    "at": "2026-10-25T09:08:05Z",
+    "by": "docs/signing.md",
+    "stale_versions": []
+  },
+  "folded_at": "2026-10-25T08:52:21Z",
+  "folds": 1,
+  "id": "project-plugin-signing-identity",
+  "kind": "defect",
+  "last_seen": "2026-10-22T17:57:41Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "Team-signing the plugin breaks vmnet against the ad hoc network service",
+  "v": 1,
+  "versions": []
+}

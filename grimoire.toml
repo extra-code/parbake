@@ -1,0 +1,15 @@
+#:schema https://grimoire.rs/schemas/grimoire-config.schema.json
+[options]
+clients = ["claude", "agents"]
+
+[bundles]
+code-docs-essentials = "ghcr.io/ocx-sh/lore/code-docs-essentials:latest"
+docs-essentials = "ghcr.io/ocx-sh/lore/docs-essentials:latest"
+hex = "ghcr.io/michael-herwig/arcana/hex:latest"
+shell-essentials = "ghcr.io/ocx-sh/lore/shell-essentials:latest"
+swift-essentials = "ghcr.io/ocx-sh/lore/swift-essentials:latest"
+
+[skills]
+
+[rules]
+code-docs = "ghcr.io/ocx-sh/lore/code-docs:latest"
