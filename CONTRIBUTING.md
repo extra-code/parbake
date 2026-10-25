@@ -1,3 +1,4 @@
+<!-- doc_type: explanation -->
 # Contributing to Parbake
 
 ## Set up
@@ -27,6 +28,7 @@ The other requirements are in the [README](README.md#requirements). Builds are s
 | `task check` | lint, build, sign and test; run it before every pull request |
 | `task fmt` | format Swift with `.swift-format` and shell scripts with shfmt |
 | `task test` | run the Swift tests; `/usr/bin/swift test --filter <Suite>` runs one suite |
+| `task coverage` | print line coverage per module; it reports and sets no threshold |
 | `task install` | install the signed plugin into `INSTALL_ROOT` (default `/usr/local`) |
 
 `task check` does not boot a guest. For a change to the runtime, the guest agent or parbake,
@@ -41,7 +43,20 @@ Every source file starts with two SPDX comment lines: `SPDX-FileCopyrightText: <
 ## Commits and pull requests
 
 - A commit message is a subject line in the imperative plus bullet points of what changed.
-- Decisions go into an ADR in `docs/adr/`; behaviour is described in the present tense.
+- Decisions go into an ADR in `docs/adr/`. Behaviour is described in the present tense.
 - Commits are signed.
+
+## Release
+
+A maintainer releases by tagging a commit on `main` with `vX.Y.Z`. The workflow
+`.github/workflows/release.yml` builds, verifies and signs ad hoc, then uploads the binaries and the
+generated notes as a workflow artifact. It publishes nothing.
+
+- `task release:build VERSION=X.Y.Z` builds a release locally. Local and untagged builds report `0.0.0-dev`.
+- `task release:notes` writes `.build/release-assets/changelog.md` with git-cliff.
+- The generated notes list the commits of one tag range. `CHANGELOG.md` stays the curated summary.
+
+[ADR 0012](docs/adr/adr_0012_release_tag_is_the_version_source.md) and
+[ADR 0013](docs/adr/adr_0013_tagged_releases_and_git_cliff.md) define the release.
 
 Contributions are licensed under the [Apache License 2.0](LICENSE).

@@ -1,3 +1,4 @@
+<!-- doc_type: explanation -->
 # ADR: The runtime shuts a provisioned guest down over SSH
 
 ## Metadata
@@ -22,18 +23,17 @@
 power button, and stopped it forcibly once the timeout passed. `container stop`'s default timeout is
 5 s.
 
-Measured on this host, 2026-10-18: a provisioned macOS 27 guest ignored `requestStop` for 120 s and was
-stopped forcibly (exit 137); in later runs the same request shut a guest down in 6 s. A guest given
-`sudo -n /sbin/shutdown -h now` over SSH was off in 6 s, exit 0. The guest's sshd ends as soon as
-`shutdown` runs, so output printed after it does not arrive.
+Validation found that a provisioned macOS guest can ignore `requestStop` and require a forced stop
+(exit 137). A guest given `sudo -n /sbin/shutdown -h now` over SSH shut down with exit 0. The guest's
+sshd ends as soon as `shutdown` runs, so output printed after it does not arrive.
 
-The user prefers a controlled shutdown over a forced stop.
+A controlled shutdown is preferred over a forced stop.
 
 ## Decision Drivers
 
-- A guest's own shutdown is the normal end; a forced stop is the fallback.
+- A guest's own shutdown is the normal end. A forced stop is the fallback.
 - No password at stop time, and none stored for the runtime.
-- No guest agent exists yet.
+- A guest without a running agent still stops in a controlled way.
 
 ## Considered Options
 
@@ -54,20 +54,20 @@ The user prefers a controlled shutdown over a forced stop.
 | Pros | Cons |
 |------|------|
 | No password at stop time | The bundle carries a private key; whoever reads the bundle logs in as the account |
-| Shutdown accepted is known before the guest goes down | Depends on SSH until a vsock agent replaces it |
+| Shutdown accepted is known before the guest goes down | Needs an address and a running sshd |
 
 ## Decision Outcome
 
-**Option 3.** Provisioning creates `GuestKey` in the bundle, adds its public key to the account's
-`authorized_keys` and writes `/etc/sudoers.d/parbake` allowing `/sbin/shutdown` without a password,
+**Option 3.** Provisioning creates `GuestKey` in the bundle and adds its public key to the account's
+`authorized_keys`. It writes `/etc/sudoers.d/parbake`, which allows `/sbin/shutdown` without a password,
 in the same SSH session as the other preparation. `container stop`, and `container kill` with any
 signal but SIGKILL, run `sudo -n -l /sbin/shutdown && echo <accepted> && sudo -n /sbin/shutdown -h now`
-with that key. An accepted shutdown gets at least 60 s whatever `--time` says; a guest without
+with that key. An accepted shutdown gets at least 60 s whatever `--time` says. A guest without
 `GuestKey`, without an address or refusing gets the power-button request. Either way the guest is
 stopped forcibly once the wait passes.
 
 **Amended 2026-10-19:** with the guest agent, the runtime first runs `/sbin/shutdown -h now` through
-the agent: as root, or with `sudo -n` as the provisioned account when the agent does not run as
+the agent. It runs as root, or with `sudo -n` as the provisioned account when the agent does not run as
 root, using the same sudoers rule. SSH and then the power-button request remain the fallbacks, in
 that order. The same 60 s minimum applies.
 
@@ -75,14 +75,16 @@ that order. The same 60 s minimum applies.
 
 **Positive:**
 
-- Stops end with exit 0 in about 6 s.
+- Accepted shutdowns end with exit 0.
 - `MacOSVirtualMachine.wait(timeout:)` returns as soon as the guest stops, so the reply to `stop`
   precedes the API server's exit handling.
 
 **Negative:**
 
 - `--time` below 60 s does not shorten an accepted shutdown.
-- Reading the bundle gives a login to the guest account; the disk image already gives everything.
+- The guest shutdown request gets min(stop timeout, 60 s). `container stop` passes 5 s by default, so a
+  short stop timeout falls back to the power-button request and then a forced stop.
+- Reading the bundle gives a login to the guest account. The disk image already gives everything.
 
 **Risks:**
 
@@ -90,11 +92,11 @@ that order. The same 60 s minimum applies.
 
 ## Validation
 
-- [x] On this host: `container stop` with the default timeout, twice in a row, exit 0, no XPC error.
+- [x] `container stop` with the default timeout exits 0 without an XPC error.
 - [x] `GuestPreparationTests`: the script parses, carries keys and password verbatim, ends with the
       shutdown, `--tidy` is optional.
-- [x] Shutdown through the vsock guest agent first: `container stop` with an agent in the guest,
-      exit 0 in 1.4 s, no SSH connection in the log (2026-10-19).
+- [x] Shutdown through the vsock guest agent first: `container stop` with an agent in the guest
+      exits 0 without an SSH connection in the log.
 
 ## Links
 
@@ -102,5 +104,5 @@ that order. The same 60 s minimum applies.
 
 ## Changelog
 
-- 2026-10-18 — Initial version.
-- 2026-10-19 — Shutdown through the guest agent first, SSH as the fallback.
+- 2026-10-18: Initial version.
+- 2026-10-19: Shutdown through the guest agent first, SSH as the fallback.

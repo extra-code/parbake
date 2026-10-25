@@ -82,13 +82,13 @@ top. The stack is base, layer and overlay, three levels.
 
 ## Validation
 
-- **V-1 — passed 2026-10-21:** unit tests: the layer's parent is the base, the overlay's parent is
+- **V-1 — passed:** unit tests: the layer's parent is the base, the overlay's parent is
   the layer, a layer on a layer is refused, an instance refuses a layer of another base, resetting
   an instance of a layer bundle keeps the layer.
-- **V-2 — passed 2026-10-21:** `parbake layer` with a script that installs the Command Line Tools
-  through `softwareupdate` created the layer bundle in 203 s, with a 3.7 GB `Layer.asif`. The base's
+- **V-2 — passed:** `parbake layer` with a script that installs the Command Line Tools
+  through `softwareupdate` created the layer bundle. The base's
   `Disk.img` kept its modification time.
-- **V-3 — passed 2026-10-21:** a container from the layer bundle ran `xcode-select -p`, printed
-  clang 21.0.0 and compiled and ran a C program, with a 155 MB overlay. A container from the base at
+- **V-3 — passed:** a container from the layer bundle ran `xcode-select -p`, reported the installed
+  compiler and compiled and ran a C program. A container from the base at
   the same time had no `/Library/Developer/CommandLineTools`.
-- **V-4 — passed 2026-10-21:** a script that exits 1 failed the command and left no layer bundle.
+- **V-4 — passed:** a script that exits 1 failed the command and left no layer bundle.

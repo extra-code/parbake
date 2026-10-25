@@ -32,8 +32,8 @@ The raw path costs more than it returns:
 - Two code paths in `MacOSVMBundle`, `parbake install --disk-format`, weak linking of DiskImageKit,
   `#available` checks and tests for both.
 
-The plugin is a proof of concept with no users beyond this host, so no installed base depends on
-older hosts.
+The plugin is a proof of concept with no established external user base, so no installed base
+depends on older hosts.
 
 ## Decision Drivers
 

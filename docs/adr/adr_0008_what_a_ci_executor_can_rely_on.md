@@ -1,3 +1,4 @@
+<!-- doc_type: explanation -->
 # ADR: What a CI executor can rely on: guest limit, failures and writable paths
 
 ## Metadata
@@ -29,15 +30,15 @@ for the job, and `container rm -f`. It needs to know:
 `container run -d` returns only once the guest agent answers, and fails with the guest stopped when
 it does not ([spec_guest_agent](../specs/spec_guest_agent.md), V-5).
 
-Measured on 2026-10-21 with two running guests from one bundle:
+Validation with two running guests from one bundle found:
 
-- A third `container run` failed after 1 s with Virtualization.framework's `VZErrorDomain` code 6,
+- A third `container run` failed with Virtualization.framework's `VZErrorDomain` code 6,
   "The maximum supported number of active virtual machines has been reached."
 - `container kill` on a guest while `container exec … sleep 100` ran made the exec fail with exit
   status 1, the same status as a job that runs `exit 1`. `container ls` showed the container
   `stopped` right after.
-- As the CI account, `/usr` and `/System` were not writable, the home directory was, and `TMPDIR`
-  was empty.
+- The provisioned guest account could not write `/usr` or `/System`; its home directory was
+  writable, and `TMPDIR` was empty.
 
 ## Decision Drivers
 
@@ -61,7 +62,7 @@ Measured on 2026-10-21 with two running guests from one bundle:
 | Pros | Cons |
 |------|------|
 | One authority for the limit, also across other users of the framework | The caller learns of the limit only at start |
-| A refusal takes 1 s and leaves no guest | |
+| A refusal leaves no guest | |
 
 ### Telling a guest failure from a job failure
 
@@ -83,7 +84,7 @@ Measured on 2026-10-21 with two running guests from one bundle:
 
 **Guest limit:** at most two macOS guests run per host. Virtualization.framework enforces it. A
 start beyond it fails with "this host already runs the two macOS guests Virtualization.framework
-allows; stop one first". Scheduling jobs within the limit is the caller's job.
+allows. Stop one first". Scheduling jobs within the limit is the caller's job.
 
 **Failures:** an executor classifies by these rules.
 
@@ -92,9 +93,27 @@ allows; stop one first". Scheduling jobs within the limit is the caller's job.
 | `container run -d` fails | Guest failure: no boot, or no agent within the readiness timeout. The container is stopped. |
 | `container exec` exits and the container still runs | The status is the job's own exit code. |
 | `container exec` fails and the container is stopped | Guest failure during the job. The error says "the macOS guest stopped with exit code N while process … ran; the process has no exit code". |
+| `container exec` fails and the container still runs | The agent's stream was lost while the guest kept running. The error (`.interrupted`) says "lost the guest agent's stream for process … while the guest kept running; its exit code is unknown". |
+
+A reboot inside a job restarts the guest inside the same VM. Virtualization.framework reports no
+reboot, so `exec` ends as lost after about 60 s with the "guest kept running" error. `shutdown -h now`
+ends it with the "guest stopped" error.
 
 The guest's own exit code is 0 for a shutdown, 1 for a Virtualization.framework error and 137 for a
 forced stop.
+
+**`parbake` exit codes:** `parbake` prints `Error: <message>` to stderr and exits with one of these
+codes, so a build script classifies its failures the same way.
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | a runtime failure not listed below |
+| 3 | a script run in the guest failed; the message names the script and its exit status |
+| 64 | usage: the arguments, the configuration or an input file are invalid |
+| 66 | a VM bundle or one of its layout files is missing, or the restore image path does not exist |
+| 69 | the host refuses: the two-guest limit is reached, or the keychain is locked or refuses access |
+| 75 | try again: the bundle is locked, or the guest gave no DHCP lease, no SSH answer or no agent answer in time |
 
 **Writable paths:** the guest's system volume is sealed. A job writes to the CI account's home
 directory and to `TMPDIR`, which the agent sets to the account's own temporary directory. Both are

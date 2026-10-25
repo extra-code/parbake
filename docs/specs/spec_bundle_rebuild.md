@@ -1,12 +1,18 @@
+<!-- doc_type: reference -->
 # Spec: Bundle rebuild — `parbake create` builds a fresh bundle every time
 
 ## Overview
 
 **Status:** Implemented
+
 **Author:** Christian Semmelmann
+
 **Date:** 2026-10-20
+
 **Issue/Ticket:** N/A
+
 **Related PRD:** N/A
+
 **Decisions of record:** [ADR 0001](../adr/adr_0001_overlay_per_container_on_an_asif_base.md)
 (overlays and a replaced base), [ADR 0007](../adr/adr_0007_hosts_run_macos_27_and_disks_are_asif.md)
 (macOS 27 hosts, ASIF only).
@@ -136,28 +142,27 @@ an existing bundle only once the new one is complete, and it keeps one restore i
 
 **Validation:**
 
-- **V-1 — passed 2026-10-20:** `parbake ipsw-url` is unknown, `parbake create --help` lists `--restore-image`,
+- **V-1, passed:** `parbake ipsw-url` is unknown, `parbake create --help` lists `--restore-image`,
   `--replace` and `--keep-cache`, and `--ipsw` is rejected.
-- **V-2 — passed 2026-10-20 (`RestoreImageSourceTests`, `RestoreImageCacheTests`):** unit test: a value with `http://` or `https://` is a URL, anything else a path. A cached
+- **V-2, passed (`RestoreImageSourceTests`, `RestoreImageCacheTests`):** unit test: a value with `http://` or `https://` is a URL, anything else a path. A cached
   image with `.done` is reused without a request.
-- **V-3 — passed 2026-10-20 (`RestoreImageCacheTests`):** unit test: a downloaded file that `VZMacOSRestoreImage` cannot load is deleted and gets
+- **V-3, passed (`RestoreImageCacheTests`):** unit test: a downloaded file that `VZMacOSRestoreImage` cannot load is deleted and gets
   no `.done`.
-- **V-4 — passed 2026-10-20 (`BundleReplacementTests`):** unit test with a stubbed build step: on failure the target is unchanged and
+- **V-4, passed (`BundleReplacementTests`):** unit test with a stubbed build step: on failure the target is unchanged and
   `<bundle>.parbake-new` is gone. On success the target holds the new bundle and neither sibling
   remains.
-- **V-5 — passed 2026-10-20:** on this host, `create --replace` on a provisioned bundle produces a bundle whose base
-  has a new layer UUID. A container made from the old bundle then fails with the label named, as
-  ADR 0001 specifies. Measured on an encrypted external APFS volume over USB with `PARBAKE_HOME` set:
-  the first `create` downloaded the image and built and provisioned the bundle, about 6 minutes
-  after the download. `create --replace` built `VM.bundle.parbake-new` from the cached image and
+- **V-5, passed:** `create --replace` on a provisioned bundle produces
+  a bundle whose base has a new layer UUID. A container made from the old bundle then fails with the label named, as
+  ADR 0001 specifies. Validation confirmed the replacement behavior on APFS.
+  `create --replace` built `<bundle>.parbake-new` from the cached image and
   swapped it in, and no sibling remained. The stopped container from the old bundle then failed
   to start with the label named in the error.
-- **V-6 — passed 2026-10-20 (`RestoreImageCacheTests`):** unit test: with two images and a stray file in the cache, pruning leaves the used image,
+- **V-6, passed (`RestoreImageCacheTests`):** unit test: with two images and a stray file in the cache, pruning leaves the used image,
   its `.done` and the stray file.
 
 ## Resolved Questions
 
-Decided by Christian Semmelmann, 2026-10-20.
+Decided by project maintainers.
 
 1. **Option name:** `--restore-image`, Apple's term in the API and the docs, instead of `--ipsw`.
 2. **Rebuild over update:** a bundle creator always builds fresh, so `create` gets `--replace`
@@ -168,5 +173,7 @@ Decided by Christian Semmelmann, 2026-10-20.
 - None.
 
 ## Approval
+
+The box below is the decider's. Agents leave it as it is.
 
 - [ ] Decider: Christian Semmelmann

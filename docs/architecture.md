@@ -35,12 +35,18 @@ separate question, answered in [Host and guest versions](#host-and-guest-version
 
 ## The bundle and parbake
 
-A bundle is a directory holding one installed macOS guest. `parbake create` builds it in four steps.
+A bundle is a directory holding one installed macOS guest. `parbake create` builds it in three steps,
+and the last step has two branches.
 
 1. Download the restore image, the macOS installer from Apple, into the cache.
 2. Install macOS from it onto a new ASIF disk image with `VZMacOSInstaller`.
-3. Boot once to create the account, add the SSH keys and install the agent.
-4. Shut the guest down through the agent.
+3. Prepare the guest. The branch depends on `--username`:
+   - **With `--username`,** `create` provisions the account without a window. It boots once to create
+     the account, add the SSH keys and install the agent. It then runs any `--script` files as root
+     through the agent and shuts the guest down through the agent.
+   - **Without `--username`,** `create` opens the guest in a window for the Setup Assistant, and you
+     create the account by hand. The bundle has no `Provisioned` file, no guest key and no agent. The
+     `--no-setup` flag skips the window.
 
 | File | Content | Per container |
 |---|---|---|
@@ -115,7 +121,7 @@ Read from top to bottom, the layers are these.
 
 ### Layer bundles
 
-A layer bundle puts one more level between the base and the overlays, for software that every
+A layer bundle puts one more level between the base and the overlays. It holds software that every
 container needs and that takes long to install, such as Xcode. `parbake layer` creates it.
 
 ```mermaid
@@ -131,8 +137,7 @@ flowchart TB
   `parbake layer` runs its script, the layer is the writable top. Afterwards only overlays write.
 - A container's instance links both files and stacks its overlay on them, so the stack is three
   levels. A layer on a layer is refused, since Apple advises keeping stacks shallow.
-- The binding works at every level: a rebuilt base no longer carries the layer's parent UUID, and
-  a rebuilt layer no longer carries the overlays' parent UUID.
+- The binding works at every level: a rebuilt base no longer carries the layer's parent UUID. A rebuilt layer no longer carries the overlays' parent UUID.
 
 When a bundle is rebuilt, its base gets a new layer UUID. Existing overlays then fail to stack. The
 label `runtime-macos.on-incompatible-overlay` decides what follows: `fail` stops the start, and
@@ -251,7 +256,7 @@ sequenceDiagram
     loop every second, up to runtime-macos.readiness-timeout (180 s)
         plugin->>agent: dial vsock 1024, Getenv(agent version)
     end
-    agent-->>plugin: version, e.g. "1 0.52.0"
+    agent-->>plugin: version, e.g. "1 0.0.0-dev"
     plugin-->>cli: started, the guest is ready
 
     cli->>plugin: container stop
