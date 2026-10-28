@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+# Run once by hand after the package is public. The claim opens a pull request in ocx-sh/index.
+name: Claim
+
+on: workflow_dispatch
+
+permissions: {}
+
+jobs:
+  claim:
+    name: claim the package in the OCX index
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    steps:
+      - uses: ocx-sh/setup-ocx@25fa771f8572572dc64528db89560de68a163a0e # v1.4.0
+        with:
+          version: 0.6.5
+          project: ""
+          cache: false
+
+      - name: Claim the package
+        env:
+          OCX_ANNOUNCE_TOKEN: ${{ secrets.OCX_ANNOUNCE_TOKEN }}
+          OCX_INDEX_FORK: ${{ vars.OCX_INDEX_FORK }}
+        run: |
+          ocx package claim --repository oci://ghcr.io/extra-code/parbake --fork "$OCX_INDEX_FORK" extra-code/parbake
