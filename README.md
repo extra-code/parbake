@@ -41,7 +41,7 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 ## Requirements
 
 - Mac with Apple silicon, macOS 27 or later, Xcode 27 (macOS 27 SDK)
-- [OCX](https://ocx.sh) for `task` and the lint tools. Run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`
+- [OCX](https://ocx.sh) for `task` and the lint tools: [go-task/task](https://ocx.sh/catalog/go-task/task), [shellcheck/shellcheck](https://ocx.sh/catalog/shellcheck/shellcheck), [shfmt/shfmt](https://ocx.sh/catalog/shfmt/shfmt) and [astral-sh/uv](https://ocx.sh/catalog/astral-sh/uv). Run `ocx pull` once in the checkout, and the OCX shell hook puts `task` on `PATH`. To try Parbake without building, the [quickstart](docs/quickstart.md) installs [extra-code/container](https://ocx.sh/catalog/extra-code/container), a temporary patched build of Apple `container`, and [extra-code/parbake](https://ocx.sh/catalog/extra-code/parbake) through OCX
 - For `--username` provisioning and the guest agent: a macOS 27 or later guest
 - A patched apple/container build. A stock `container` release is unsupported:
   the plugin config needs `[runtimeConfig]` support, which the fork's commits add.
@@ -52,6 +52,8 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 - Do not boot a bundle read-write while containers run from it: their overlays build on its disk as it is.
 
 ## Quick start
+
+To try Parbake without building it, follow [docs/quickstart.md](docs/quickstart.md). It installs two published OCX packages, the fork's [`container`](https://ocx.sh/catalog/extra-code/container) and [`parbake`](https://ocx.sh/catalog/extra-code/parbake), and joins them with three symlinks. Upgrade, uninstall and troubleshooting are in [docs/package.md](docs/package.md) and [docs/package-troubleshooting.md](docs/package-troubleshooting.md). The steps below build from source.
 
 ```bash
 task sign                          # build and sign the plugin, parbake and the guest agent

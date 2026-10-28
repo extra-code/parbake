@@ -58,7 +58,7 @@ outside `docs/adr/`. When in doubt, cut.
 
 No details about other projects anywhere in this repository — code, docs, ADRs, specs, plans,
 commit messages, and the agent files themselves (`AGENTS.md`, `CLAUDE.md`, `.agents/`). The only projects named are the Apple projects this one depends on
-(apple/container, apple/containerization, Apple frameworks). Describe what this runtime offers or
+(apple/container, apple/containerization, Apple frameworks), the fork extra-code/container and OCX. Describe what this runtime offers or
 needs, not which other tool uses it.
 
 ## Conventions
@@ -96,12 +96,13 @@ Security-sensitive paths:
   `com.apple.security.virtualization`.
 - `Sources/container-runtime-macos/**` — XPC routes; the plugin runs in the user's launchd domain.
 - `Sources/RuntimeMacOS/**` — VZ device configuration, bundle cloning, guest access.
+- `.github/workflows/release.yml` — the `publish` job is the only step with write permissions.
 - `scripts/**` — `dev-env.sh` stops and restarts the installed container services.
 - `Sources/parbake/**` — the image tool; `parbake create` downloads restore images (`--restore-image`) and builds bundles (`--replace`).
 
 ## Scratch
 
-Build output goes to `.build/`, and `dev-env.sh` clones and builds the pinned apple/container fork in
+Build output goes to `.build/`, `task package` stages the OCX package in `.build/package/`, and `dev-env.sh` clones and builds the pinned apple/container fork in
 `.build/dev-env/container`. `parbake create` (also with `--restore-image` or `--replace`) writes the restore-image cache to
 `~/Library/Caches/parbake` and the default bundle to `~/VM.bundle`, or both under `$PARBAKE_HOME`;
 `dev-env.sh` keeps the data of the development container services in `~/.container-macos-dev`. `HOME` is not redirected.

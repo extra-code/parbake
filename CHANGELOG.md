@@ -10,6 +10,9 @@
 - The `parbake` command provisions, layers and installs the agent in macOS VM bundles.
 - The guest agent reports readiness to the plugin and runs scripts as root.
 - Parbake exit codes: 64 usage, 66 missing VM bundle or restore image path, 69 VM limit or keychain locked or refused, 75 lock held or timeout, 3 guest script failed, 1 anything else.
+- A release publishes two OCX packages, signed keylessly: `ocx.sh/extra-code/parbake:0.1.0` holds the plugin and `parbake`. It pairs with `ocx.sh/extra-code/container:1.6.1_01`, a temporary patched build of Apple `container`.
+- [docs/quickstart.md](docs/quickstart.md) walks through verifying and installing both packages, running a guest and switching back to the stock `container`.
+- [docs/package.md](docs/package.md) covers upgrade and uninstall. [docs/package-troubleshooting.md](docs/package-troubleshooting.md) lists the known problems.
 - [SECURITY.md](SECURITY.md) covers private reporting and the trust model.
 - [docs/end_to_end_checklist.md](docs/end_to_end_checklist.md) lists the host run that gates a release.
 
