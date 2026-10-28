@@ -16,6 +16,7 @@
 **Domain Tags:** release, ci
 **Supersedes:** N/A
 **Superseded By:** N/A
+**Amended By:** [ADR 0015](adr_0015_ship_the_fork_and_parbake_as_two_ocx_packages.md)
 **Related:** [ADR 0012](adr_0012_release_tag_is_the_version_source.md),
 [ADR 0008](adr_0008_what_a_ci_executor_can_rely_on.md)
 
