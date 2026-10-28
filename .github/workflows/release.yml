@@ -18,7 +18,13 @@ jobs:
   release:
     name: build release assets
     runs-on: xcode-27
-    timeout-minutes: 90
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact-id: ${{ steps.upload-package.outputs.artifact-id }}
+      sha256: ${{ steps.digest.outputs.sha256 }}
+      metadata-sha256: ${{ steps.digest.outputs.metadata-sha256 }}
+      container-tag: ${{ steps.container-tag.outputs.container-tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,19 +51,41 @@ jobs:
             exit 1
           fi
 
+      # The package is excluded so a cache written by another ref never reaches the signed
+      # package; a tag run cannot hit a per-tag cache anyway.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: .build
+          path: |
+            .build
+            !.build/package
           key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
 
       - uses: ocx-sh/setup-ocx@25fa771f8572572dc64528db89560de68a163a0e # v1.4.0
+        with:
+          version: 0.6.5
 
       - run: task check
 
-      - name: Build the release
+      - name: Read the container tag
+        id: container-tag
+        run: |
+          tag=""
+          if [ -f packaging/container.tag ]; then
+            tag="$(tr -d '[:space:]' < packaging/container.tag)"
+            if ! [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+_[0-9]{2}$ ]]; then
+              echo "error: container tag \"$tag\" is not X.Y.Z_NN" >&2
+              exit 1
+            fi
+          fi
+          echo "container-tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build the release and the OCX package
+        id: version
         env:
           TAG: ${{ github.ref_name }}
-        run: task release:build VERSION="${TAG#v}"
+        run: |
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          task package VERSION="${TAG#v}"
 
       - run: task release:notes
 
@@ -66,3 +94,150 @@ jobs:
           name: release-assets
           path: .build/release-assets/
           if-no-files-found: error
+
+      - name: Compute the archive and metadata SHA-256
+        id: digest
+        run: |
+          set -- .build/package/parbake-*.tar.xz
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "error: expected exactly one package archive" >&2
+            exit 1
+          fi
+          echo "sha256=$(shasum -a 256 "$1" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          set -- .build/package/parbake-*-metadata.json
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "error: expected exactly one package metadata file" >&2
+            exit 1
+          fi
+          echo "metadata-sha256=$(shasum -a 256 "$1" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload-package
+        with:
+          name: ocx-package
+          path: |
+            .build/package/parbake-*.tar.xz
+            .build/package/parbake-*-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish the OCX package
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: xcode-27
+    timeout-minutes: 30
+    concurrency:
+      group: publish-parbake
+      cancel-in-progress: false
+    permissions:
+      packages: write
+      id-token: write
+    outputs:
+      tags: ${{ steps.push.outputs.tags }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.release.outputs.artifact-id }}
+          path: ocx-package
+
+      - name: Check the archive and metadata SHA-256
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          EXPECTED_ARCHIVE: ${{ needs.release.outputs.sha256 }}
+          EXPECTED_METADATA: ${{ needs.release.outputs.metadata-sha256 }}
+        run: |
+          set -- ocx-package/parbake-*.tar.xz
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "error: expected exactly one package archive" >&2
+            exit 1
+          fi
+          archive="$1"
+          if [ "$archive" != "ocx-package/parbake-${VERSION}.tar.xz" ]; then
+            echo "error: archive $archive is not parbake-${VERSION}.tar.xz" >&2
+            exit 1
+          fi
+          set -- ocx-package/parbake-*-metadata.json
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "error: expected exactly one package metadata file" >&2
+            exit 1
+          fi
+          metadata="$1"
+          if [ "$metadata" != "ocx-package/parbake-${VERSION}-metadata.json" ]; then
+            echo "error: metadata $metadata is not parbake-${VERSION}-metadata.json" >&2
+            exit 1
+          fi
+          actual="$(shasum -a 256 "$archive" | cut -d' ' -f1)"
+          if [ "$actual" != "$EXPECTED_ARCHIVE" ]; then
+            echo "error: archive SHA-256 $actual does not match the build job's $EXPECTED_ARCHIVE" >&2
+            exit 1
+          fi
+          actual="$(shasum -a 256 "$metadata" | cut -d' ' -f1)"
+          if [ "$actual" != "$EXPECTED_METADATA" ]; then
+            echo "error: metadata SHA-256 $actual does not match the build job's $EXPECTED_METADATA" >&2
+            exit 1
+          fi
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "METADATA=$metadata" >> "$GITHUB_ENV"
+
+      # No repository config and no cache reach the job that holds the write tokens.
+      - uses: ocx-sh/setup-ocx@25fa771f8572572dc64528db89560de68a163a0e # v1.4.0
+        with:
+          version: 0.6.5
+          project: ""
+          cache: false
+
+      - name: Push and sign the package
+        id: push
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          CONTAINER_TAG: ${{ needs.release.outputs.container-tag }}
+          OCX_AUTH_ghcr_io_TYPE: basic
+          OCX_AUTH_ghcr_io_USER: ${{ github.actor }}
+          OCX_AUTH_ghcr_io_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -- -p darwin/arm64 -m "$METADATA" --ci-annotations=github --sign --cascade
+          if [ -n "$CONTAINER_TAG" ]; then
+            set -- "$@" --annotation "org.extra-code.parbake.container-tag=${CONTAINER_TAG}"
+          fi
+          rm -f tags.txt
+          ocx package push "$@" --tags-file tags.txt -i "ghcr.io/extra-code/parbake:${VERSION}" "$ARCHIVE"
+          echo "tags=$(paste -sd, tags.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the pushed signature
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          OCX_AUTH_ghcr_io_TYPE: basic
+          OCX_AUTH_ghcr_io_USER: ${{ github.actor }}
+          OCX_AUTH_ghcr_io_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ocx package verify -p darwin/arm64 \
+            --certificate-identity "https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v${VERSION}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "ghcr.io/extra-code/parbake:${VERSION}"
+
+  announce:
+    name: announce the package to the OCX index
+    needs: publish
+    # OCX_INDEX_ANNOUNCE must be a repository or organization variable: a job-level if cannot
+    # read environment variables, so one set on the release environment never matches.
+    if: startsWith(github.ref, 'refs/tags/v') && vars.OCX_INDEX_ANNOUNCE == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release
+    permissions: {}
+    steps:
+      - uses: ocx-sh/setup-ocx@25fa771f8572572dc64528db89560de68a163a0e # v1.4.0
+        with:
+          version: 0.6.5
+          project: ""
+          cache: false
+
+      - name: Announce the package
+        env:
+          OCX_ANNOUNCE_TOKEN: ${{ secrets.OCX_ANNOUNCE_TOKEN }}
+          OCX_INDEX_FORK: ${{ vars.OCX_INDEX_FORK }}
+          TAGS: ${{ needs.publish.outputs.tags }}
+        run: |
+          echo "$TAGS" | tr ',' '\n' > tags.txt
+          ocx package announce --tags-file tags.txt --fork "$OCX_INDEX_FORK" extra-code/parbake

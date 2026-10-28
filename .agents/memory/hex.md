@@ -23,6 +23,8 @@ copies. Team-shared — commit it.
   per host, security-sensitive paths.
 - Writing style: `AGENTS.md` › "Documentation and code"; commits: `AGENTS.md` › "Git".
 - Worktrees: default `.agents/worktrees/` (gitignored; `.agents/` itself is tracked).
+- Federation: `fork` → `../container-fork` (git@github.com:extra-code/container.git); verification
+  documented in `ocx/README.md` of that repo (created by plan_fork_ocx_delivery F1).
 
 ## Preferences
 
@@ -63,3 +65,18 @@ perspectives:
 - 2026-10-23 /hex-plan xhigh → active plan: `.agents/plans/plan_release_audit_stage2.md`
   (release audit stage 2, hardening; contract wave + 7 wave-1 pipelines + the PE host run; State plan-approved).
   Sites at `12aa486`: `.agents/research/research_release_audit_stage2_recon.md`.
+- 2026-10-26 /hex-discuss fork-container-ocx-delivery → plan: `.agents/discussions/fork-container-ocx-delivery.md`
+  (fork container + Parbake as one ad-hoc OCX package on ghcr.io, docs-only quickstart).
+  Research: `.agents/research/research_fork_ocx_delivery_*.md`.
+- 2026-10-26 /hex-plan high → active plan: `.agents/plans/plan_fork_ocx_delivery.md`
+  (contract wave + 3 wave-1 pipelines + the attended host run H1; State plan-approved).
+  Design: `docs/adr/adr_0015_ship_the_fork_and_parbake_as_two_ocx_packages.md` (Proposed).
+- 2026-10-26 /hex-execute plan_fork_ocx_delivery → review: W0, P1, P2, P3 merged, two fix passes,
+  `task clean check` green; H1 (attended host run) open before /hex-finalize.
+- 2026-10-28 /hex-plan xhigh (replan) → active plan: `.agents/plans/plan_fork_ocx_delivery.md`
+  (two packages: ephemeral `ocx.sh/extra-code/container` built in the fork, durable `ocx.sh/extra-code/parbake`;
+  W0 + P1–P3 + F1 (fork) + H2; State plan-approved). Design: ADR 0015 renamed to `…_as_two_ocx_packages.md` (Proposed).
+  Research: `.agents/research/research_two_package_spikes.md`, `.agents/research/research_ocx_own_index.md`.
+- 2026-10-28 /hex-execute plan_fork_ocx_delivery (two packages) → review: W0, P1–P3 merged on the lead,
+  F1 as fork commit `3cb531c`, one fix pass in both repos, `task clean check` and the fork self-test green,
+  H2 green; ADR 0015 Accepted.

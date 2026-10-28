@@ -147,6 +147,7 @@ tasks:
   lint:release:
     cmds:
       - scripts/release.sh --self-test
+      - scripts/package.sh --self-test
 
   lint:coverage:
     cmds:
@@ -165,6 +166,23 @@ tasks:
       PARBAKE_CODESIGN_IDENTITY: "{{.PARBAKE_CODESIGN_IDENTITY}}"
     cmds:
       - scripts/release.sh build "{{.VERSION}}"
+
+  package:
+    desc: >-
+      Build the OCX package of the Parbake plugin: task package VERSION=X.Y.Z.
+      Runs release:build first (same signing variables; RELEASE_ALLOW_NON_MAIN=1 skips the main check
+      for a local dry run), then scripts/package.sh all. PACKAGE_PAIR_LOCATION may point the pairing check at a fork clone
+      for a dry run before the fork tag exists. The archive lands in .build/package/
+    requires:
+      vars: [VERSION]
+    preconditions:
+      - sh: test -n "{{.VERSION}}"
+        msg: "VERSION is required: task package VERSION=X.Y.Z"
+    cmds:
+      - task: release:build
+        vars:
+          VERSION: "{{.VERSION}}"
+      - scripts/package.sh all "{{.VERSION}}"
 
   release:notes:
     desc: >-

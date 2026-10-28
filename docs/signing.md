@@ -20,7 +20,7 @@ code identity from one build to the next.
 | Apple Development | An Apple Account in Xcode; a free Personal Team is enough | A stable identity on each host that holds its private key |
 | Developer ID Application | A paid Apple Developer Program membership | Signed, notarized binaries for other Macs |
 
-Parbake ships no binaries, so it uses no Developer ID.
+Releases ship two ad-hoc-signed OCX packages, `container` and `parbake`, without a Developer ID ([ADR 0015](adr/adr_0015_ship_the_fork_and_parbake_as_two_ocx_packages.md)).
 
 ## Create an Apple Development identity {#create-an-apple-development-identity}
 
@@ -67,6 +67,16 @@ The plugin must share a signing domain with the `container` services it joins.
 A source build of apple/container is signed ad hoc, so install the plugin with the ad-hoc identity.
 A plugin signed with a team identity cannot attach to an ad-hoc network service.
 Its start then fails with "failed to start the DHCP interface on the vmnet network, status 1001".
+An attended run on a macOS 27 host measured four combinations:
+
+| Services | Plugin | Result |
+|---|---|---|
+| ad hoc | ad hoc | the guest boots, gets a DHCP address and answers `exec` |
+| team-signed | ad hoc | status 1001 when the guest attaches to the network |
+| team-signed | the same team | the guest boots, gets a DHCP address and answers `exec` |
+| ad hoc | team-signed | status 1001 |
+
+The plugin loads and starts in every case. Only joining the network of `container-network-vmnet` fails, and only when the signatures differ.
 The keychain item needs the identity on `parbake` only, because the plugin never reads it.
 
 `CODESIGN_IDENTITY` signs the plugin and `parbake-agent`. `PARBAKE_CODESIGN_IDENTITY` signs `parbake`

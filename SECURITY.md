@@ -31,6 +31,7 @@ It does not defend that account against code that runs inside it.
 | Bundle roots | The plugin boots only bundles under the home directory and the paths in the bundle-roots file. |
 | `--sudo` | The operator who builds a bundle owns its guest. A sudo rule lets a job, as the CI account, run that command as root. |
 | `--script` | The script runs as root in the guest. |
+| Release packages | A release publishes two OCX packages, `ghcr.io/extra-code/container` and `ghcr.io/extra-code/parbake`, signed keylessly. See [Release packages](#release-packages). |
 
 ### Keychain access follows the signing identity
 
@@ -54,3 +55,33 @@ The home directory is always allowed.
 
 `--sudo` and `[guest] sudo` accept absolute command paths only, with no arguments and no wildcards.
 [ADR 0011](docs/adr/adr_0011_guest_sudo_rules_and_provisioning_config.md) records the rule and its reasons.
+
+### Release packages
+
+The extra-code/container fork publishes `ghcr.io/extra-code/container:<upstream>_<build>`, a temporary patched build of Apple `container`. A Parbake tag run publishes `ghcr.io/extra-code/parbake:X.Y.Z`, which holds the plugin and the `parbake` command.
+In both repositories the build job holds `contents: read`. Only the `publish` job holds `packages: write` and `id-token: write`.
+
+The `publish` job runs no repository code. The build job verifies the package root and records the SHA-256 of the archive and of its metadata. The publish job compares both before it pushes.
+[ADR 0015](docs/adr/adr_0015_ship_the_fork_and_parbake_as_two_ocx_packages.md) records the design.
+
+The `announce` job opens a pull request against the ocx.sh index. It holds no repository permissions. Its token is preferably a fine-grained personal access token with read access and pull-request write on `ocx-sh/index` and on the owner's index fork. A classic token with `repo` scope is the fallback when a fine-grained token cannot be granted those. The token lives only in the `release` environment, which requires the owner's approval and admits only release tags.
+
+To pin the signer, verify with the identity of one release and the issuer `https://token.actions.githubusercontent.com`.
+A trust policy in the OCX `config.toml` (`$OCX_HOME/config.toml`, which defaults to `~/.ocx/config.toml`) can accept every release. Each package has its own `identity_regexp`:
+
+```toml
+# ghcr.io/extra-code/container
+identity_regexp = "^https://github.com/extra-code/container/.github/workflows/ocx-package.yml@refs/tags/ocx-[0-9]+\\.[0-9]+\\.[0-9]+_[0-9]{2}$"
+# ghcr.io/extra-code/parbake
+identity_regexp = "^https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$"
+```
+
+The tag rulesets give `refs/tags/ocx-` and `refs/tags/v` their meaning, because only maintainers create those tags.
+[docs/quickstart.md](docs/quickstart.md#verify-the-packages) shows the commands.
+
+- A signature attests which workflow built a package. It does not attest that anyone reviewed the content.
+- The binaries are signed ad hoc and are not notarised. Gatekeeper and TCC treat them as unidentified.
+- Verification is opt-in. Without a trust policy or an explicit `ocx package verify`, an install skips it.
+- The fork's apiserver runs as the user, with the virtualization entitlement.
+- The fork's Makefile runs in the fork's build job with its rights. That is a first-party trust assumption.
+- Builds are not reproducible.
