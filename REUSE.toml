@@ -16,6 +16,8 @@ path = [
     "grimoire.lock",
     "grimoire.toml",
     "ocx.lock",
+    "packaging/*.json",
+    "packaging/container.tag",
     "scripts/fixtures/**",
 ]
 SPDX-FileCopyrightText = "2026 Christian Semmelmann"
