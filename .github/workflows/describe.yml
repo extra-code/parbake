@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Christian Semmelmann
+# SPDX-License-Identifier: Apache-2.0
+
+# Publishes the catalog description (README, logo, title, keywords) as the package's __ocx.desc tag.
+# The README's frontmatter carries the title, description and keywords.
+name: Describe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - packaging/describe/**
+
+permissions: {}
+
+concurrency:
+  group: describe
+  cancel-in-progress: false
+
+jobs:
+  describe:
+    name: publish the package description
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ocx-sh/setup-ocx@25fa771f8572572dc64528db89560de68a163a0e # v1.4.0
+        with:
+          version: 0.6.5
+          project: ""
+          cache: false
+
+      - name: Push the description
+        env:
+          OCX_NO_UPDATE_CHECK: 1
+          OCX_AUTH_ghcr_io_TYPE: basic
+          OCX_AUTH_ghcr_io_USER: ${{ github.actor }}
+          OCX_AUTH_ghcr_io_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ocx package description push \
+            --readme packaging/describe/README.md \
+            --logo packaging/describe/logo.svg \
+            ghcr.io/extra-code/parbake

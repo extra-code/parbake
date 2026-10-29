@@ -64,7 +64,7 @@ In both repositories the build job holds `contents: read`. Only the `publish` jo
 The `publish` job runs no repository code. The build job verifies the package root and records the SHA-256 of the archive and of its metadata. The publish job compares both before it pushes.
 [ADR 0015](docs/adr/adr_0015_ship_the_fork_and_parbake_as_two_ocx_packages.md) records the design.
 
-The `announce` job opens a pull request against the ocx.sh index. It holds no repository permissions. Its token is preferably a fine-grained personal access token with read access and pull-request write on `ocx-sh/index` and on the owner's index fork. A classic token with `repo` scope is the fallback when a fine-grained token cannot be granted those. The token lives only in the `release` environment, which requires the owner's approval and admits only release tags.
+The `announce` job opens a pull request against the ocx.sh index. It holds no repository permissions. Its token is a classic personal access token with only the `public_repo` scope, because a fine-grained token cannot open a pull request in a public repository its owner does not own. The token lives only in the `release` environment. That environment requires the owner's approval and admits release tags and `main`, the branch the claim workflow runs from.
 
 To pin the signer, verify with the identity of one release and the issuer `https://token.actions.githubusercontent.com`.
 A trust policy in the OCX `config.toml` (`$OCX_HOME/config.toml`, which defaults to `~/.ocx/config.toml`) can accept every release. Each package has its own `identity_regexp`:

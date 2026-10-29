@@ -1,4 +1,5 @@
 {
+  "$schema": "https://ocx.sh/schemas/metadata/v1.json",
   "type": "bundle",
   "version": 1,
   "env": [
