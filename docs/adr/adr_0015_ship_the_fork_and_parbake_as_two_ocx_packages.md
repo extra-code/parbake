@@ -364,10 +364,10 @@ runs only when the repository variable `OCX_INDEX_ANNOUNCE` is `true`, which the
 is merged.
 
 The job reads `OCX_ANNOUNCE_TOKEN` from the `release` environment and opens a pull request against
-`ocx-sh/index`. The token is preferably a fine-grained personal access token with read access and
-pull-request write on `ocx-sh/index` and on the owner's index fork. A classic token with `repo` scope is
-the fallback when a fine-grained token cannot be granted those. The environment requires the owner's
-approval and admits only release tags.
+`ocx-sh/index`. The token is a classic personal access token with the `public_repo` scope. A
+fine-grained token cannot open a pull request in a public repository its owner does not own (OCX
+announce guide). The environment requires the owner's approval. It admits release tags and the one
+branch the claim workflow is dispatched from: `main` here, `ocx-package` in the fork.
 
 Container tags are pruned only when no Parbake release in the quickstart pairs with them. When
 Apple ships the patches, the container package root is marked `deprecated`, with a message naming
@@ -460,7 +460,7 @@ OCX visible to the apple/container project, with no second index to run.
 
 - **Security:** build jobs hold `contents: read`. Only publish jobs hold `packages: write` and
   `id-token: write`, and they run only the pinned `setup-ocx` and `ocx`. The announce token is a
-  fine-grained token where possible and a broad classic token otherwise. It lives only in the `release` environment, behind the owner's approval, and
+  classic token with only the `public_repo` scope. It lives only in the `release` environment, behind the owner's approval, and
   the announce job holds no repository permissions. The container package drops the
   fork's `sudo` scripts.
 - **Operability:** the `launchctl print` line shows which apiserver runs. Switching is two commands
@@ -508,3 +508,4 @@ OCX visible to the apple/container project, with no second index to run.
 - 2026-10-28: ruleset reliance stated after the security review.
 - 2026-10-28: accepted after the attended host run of both packages.
 - 2026-10-28: aligned with the OCX CI recipes (tags file, claim workflow, token scope).
+- 2026-10-29: classic `public_repo` token, claim branch admitted to the `release` environment, after the first claim runs.
