@@ -80,10 +80,12 @@ assessed each binary within about one second, and the unified log names no other
 and the same-team run showed no wait.
 
 Update 2026-10-30: the quickstart run from the published packages waited about seven minutes at
-`[0/6]` while three keychain dialogs waited for the user. The guest account's keychain item dated
-from an earlier run, and its access list admitted only an earlier build. Each new program asked once,
-and "Always Allow" ended the prompts. The four-minute wait above most likely had the same cause. An
-item that `parbake --keychain` creates with an ad-hoc build is open to every program and never asks.
+`[0/6]` while keychain dialogs waited for the user. The wait sat before the image fetch, where the
+fork's images service looks up a registry login in the keychain that the stock build stored. Each new
+build asks once, and "Always Allow" ends the prompts. This cause is derived from the code path
+(`ContainerImagesService/Server/ImagesService.swift`, keychain domain `com.apple.container.registry`)
+and the timing, not observed in a dialog's text. The guest keychain item is read only by `parbake`,
+never by the plugin. The four-minute wait above most likely had the same cause.
 
 ## negative
 

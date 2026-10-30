@@ -80,3 +80,8 @@ perspectives:
 - 2026-10-28 /hex-execute plan_fork_ocx_delivery (two packages) → review: W0, P1–P3 merged on the lead,
   F1 as fork commit `3cb531c`, one fix pass in both repos, `task clean check` and the fork self-test green,
   H2 green; ADR 0015 Accepted.
+- 2026-10-30 /hex-plan high → active plan: `.agents/plans/plan_package_e2e.md`
+  (repeatable package e2e run from a per-run sandbox via OCX, published + candidate mode; W0 + A1 → A2 ∥ B + H3;
+  State plan-approved). Research: `.agents/research/research_package_e2e_ocx.md`.
+- 2026-10-30 /hex-execute plan_package_e2e → review: W0, A1, A2, B merged, one review call and one fix pass,
+  `task check` green; H3 (attended host runs) open before /hex-finalize.

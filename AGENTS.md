@@ -37,7 +37,16 @@ commit"; commits use `--no-verify`.
 - Generated files: `Package.resolved` is never edited by hand; regenerate it with
   `/usr/bin/swift package resolve`, only when `Package.swift` changes.
 - Not covered: booting a guest (`scripts/dev-env.sh up`, then `run`). It is manual, needs an
-  installed VM bundle, and stops the installed container services.
+  installed VM bundle, and stops the installed container services. For the package path,
+  `task e2e:package` scripts the run and writes a receipt.
+- Package e2e: a change to `packaging/**`, `scripts/package.sh`, `scripts/package-e2e.sh`, the `container`
+  pin in `Package.resolved`, `.github/workflows/release.yml`, `docs/quickstart.md`, `docs/package.md` or
+  `docs/package-troubleshooting.md` needs `task e2e:package` (published path), or
+  `task e2e:package:candidate VERSION=X.Y.Z` when the package content changed.
+- The package run is attended: it stops the stock services and takes about 30 minutes. Ask the user
+  before you start it, and never start it in an unattended loop.
+- Report the `RESULT pass|fail|refused <receipt>` line, the run-id and the receipt path (under
+  `~/.parbake-e2e/receipts/`) in the plan Status or the PR description. Never report the receipt content.
 - Host-run defects: record each defect found on the host in the checklist record or the plan Status
   before the branch goes to review.
 

@@ -51,11 +51,15 @@ Fix: set the variables to the `ghcr.io` names above and install again. An `ocx.s
 
 ## Error: the first `run` waits at `[0/6]`
 
-This issue occurs when the guest account's keychain item already exists and only an earlier build may read it. macOS then asks before each new program reads it. An item that `parbake create --keychain` creates opens to every program, so a new item never asks.
+This issue occurs when the login keychain holds a registry login that another `container` build stored, in the keychain domain `com.apple.container.registry`. The fork's images service reads it before it fetches the image, and macOS asks once for each new build.
 
-Check: `container run` shows `[0/6]` for minutes, and a keychain dialog asks to allow access to `container-runtime-macos.guest`.
+Check: `run` shows `[0/6]` for minutes, and a keychain dialog asks to allow access for the registry host, such as `registry-1.docker.io`.
 
-Fix: answer each dialog with "Always Allow" and your login password. Or delete the item in Keychain Access. The next `parbake` run with `--keychain` creates it again, open to every program.
+Fix: answer each dialog with "Always Allow" and your login password. Or log in again with the new build:
+
+```bash
+~/.parbake/root/bin/container registry login <host>
+```
 
 ## Error: the stock services answer instead of the fork's
 
