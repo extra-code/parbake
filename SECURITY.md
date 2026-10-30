@@ -82,6 +82,7 @@ The tag rulesets give `refs/tags/ocx-` and `refs/tags/v` their meaning, because 
 - A signature attests which workflow built a package. It does not attest that anyone reviewed the content.
 - The binaries are signed ad hoc and are not notarised. Gatekeeper and TCC treat them as unidentified.
 - Verification is opt-in. Without a trust policy or an explicit `ocx package verify`, an install skips it.
+- A policy matches the reference you install. The policies above cover the `ghcr.io/extra-code/…` names, so an install through `ocx.sh/extra-code/…` skips verification. OCX 0.6.5 cannot verify through an `ocx.sh` name, so the docs install by the `ghcr.io` names.
 - The fork's apiserver runs as the user, with the virtualization entitlement.
 - The fork's Makefile runs in the fork's build job with its rights. That is a first-party trust assumption.
 - Builds are not reproducible.

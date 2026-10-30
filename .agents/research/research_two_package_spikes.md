@@ -77,7 +77,13 @@ failed. The services created the vmnet network in every case.
 
 The first team run waited about four minutes before the runtime plugin registered. Gatekeeper had
 assessed each binary within about one second, and the unified log names no other cause. A second run
-and the same-team run showed no wait. The cause stays open.
+and the same-team run showed no wait.
+
+Update 2026-10-30: the quickstart run from the published packages waited about seven minutes at
+`[0/6]` while three keychain dialogs waited for the user. The guest account's keychain item dated
+from an earlier run, and its access list admitted only an earlier build. Each new program asked once,
+and "Always Allow" ended the prompts. The four-minute wait above most likely had the same cause. An
+item that `parbake --keychain` creates with an ad-hoc build is open to every program and never asks.
 
 ## negative
 

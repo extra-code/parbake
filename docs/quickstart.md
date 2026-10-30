@@ -18,9 +18,11 @@ Two packages make the combination. [`container`](https://ocx.sh/catalog/extra-co
 Set both packages once. These variables last only for the current terminal, so run every step in it.
 
 ```bash
-CONTAINER_PKG=ocx.sh/extra-code/container:1.6.1_01
-PARBAKE_PKG=ocx.sh/extra-code/parbake:0.1.0
+CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_01
+PARBAKE_PKG=ghcr.io/extra-code/parbake:0.1.0
 ```
+
+Use the `ghcr.io` names to verify and install. The catalog lists the packages as `ocx.sh/extra-code/…`, but OCX 0.6.5 cannot check a signature through an `ocx.sh` name, and the trust policies on this page match the `ghcr.io` names. An install through an `ocx.sh` name skips the signature check and prints `no trust policy covers`.
 
 This page walks Parbake 0.1.0, which pairs with container 1.6.1_01. The [changelog](../CHANGELOG.md) lists every release and its pairing.
 
@@ -96,12 +98,14 @@ The `container` package is a temporary patched build of Apple `container`. It go
    ocx package install --link ~/.parbake/plugin "$PARBAKE_PKG"
    ```
 
-   Do not pass `--select` to either install: neither package joins your shell `PATH`. OCX verifies each signature, downloads the package and prints the installed reference. The first install can take a while. The output below is illustrative.
+   Do not pass `--select` to either install: neither package joins your shell `PATH`. OCX verifies each signature, downloads the package and prints the installed reference and its link. The first install can take a while. The output of the first line is shown below.
 
    ```text
-   ocx.sh/extra-code/container:1.6.1_01  installed
-   ocx.sh/extra-code/parbake:0.1.0  installed
+   Package                                Version                                Path
+   ghcr.io/extra-code/container:1.6.1_01  ghcr.io/extra-code/container:1.6.1_01  /Users/<you>/.parbake/container
    ```
+
+   A line `no trust policy covers …` means the install skipped the signature check. Check the reference and the policies, then install again.
 
    An authorisation error, or a link path that already exists as a directory and exits 65, is covered in [Parbake package troubleshooting](package-troubleshooting.md#error-ocx-package-install-fails).
 
@@ -224,9 +228,11 @@ The plugin boots only bundles under your home directory. For a bundle elsewhere,
    ~/.parbake/root/bin/container ls
    ```
 
+   The `OS` column shows the placeholder image, not the guest. The output below is illustrative.
+
    ```text
-   ID    IMAGE   OS     ARCH   STATE    ADDR
-   mac1  alpine  macos  arm64  running  <address>
+   ID    IMAGE                            OS     ARCH   STATE    IP          CPUS  MEMORY   STARTED
+   mac1  docker.io/library/alpine:latest  linux  arm64  running  <address>   4     8192 MB  <time>
    ```
 
 3. Run a command in the guest:

@@ -8,9 +8,11 @@ This page upgrades the `container` and `parbake` OCX packages to new releases an
 Set the new references first. These variables last only for the current terminal, so run every step in it.
 
 ```bash
-CONTAINER_PKG=ocx.sh/extra-code/container:<new-tag>
-PARBAKE_PKG=ocx.sh/extra-code/parbake:<new-version>
+CONTAINER_PKG=ghcr.io/extra-code/container:<new-tag>
+PARBAKE_PKG=ghcr.io/extra-code/parbake:<new-version>
 ```
+
+Use the `ghcr.io` names, as in the [quickstart](quickstart.md). Only they match the trust policies.
 
 ## Order rule
 
