@@ -49,6 +49,14 @@ Check: the install prints `no trust policy covers '<reference>'` and `without si
 
 Fix: set the variables to the `ghcr.io` names above and install again. An `ocx.sh` name with a matching policy fails instead, because OCX 0.6.5 cannot check a signature through the index name.
 
+## Error: the first `run` waits at `[0/6]`
+
+This issue occurs when the guest account's keychain item already exists and only an earlier build may read it. macOS then asks before each new program reads it. An item that `parbake create --keychain` creates opens to every program, so a new item never asks.
+
+Check: `container run` shows `[0/6]` for minutes, and a keychain dialog asks to allow access to `container-runtime-macos.guest`.
+
+Fix: answer each dialog with "Always Allow" and your login password. Or delete the item in Keychain Access. The next `parbake` run with `--keychain` creates it again, open to every program.
+
 ## Error: the stock services answer instead of the fork's
 
 This issue occurs when the stock apiserver still runs while you start the fork's services, or when a stock `container` CLI talks to the fork's services. Both use the same Mach service name. A second `system start` reports success against the daemon that already runs (apple/container#1757).
