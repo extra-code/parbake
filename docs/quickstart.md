@@ -58,7 +58,7 @@ Check where each package came from before you run it. This step comes first beca
    exit status: 0
    ```
 
-   Exit status 77 means the package has no signature. Exit status 79 means the signature does not match the identity you gave.
+   Exit status 79 means OCX found no signature. Exit status 77 means the signature does not match the identity you gave.
 
 3. Add one trust policy per package to the OCX config file, `~/.ocx/config.toml`. With a policy, every install verifies the signature and fails closed. Each `identity_regexp` accepts every release tag of its workflow. Write both once:
 
