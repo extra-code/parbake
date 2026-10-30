@@ -216,7 +216,7 @@ The plugin boots only bundles under your home directory. For a bundle elsewhere,
      alpine
    ```
 
-   The image reference is required by the CLI and otherwise unused. The command prints the container name.
+   `container run` needs an image reference, so `alpine` stands in. Parbake boots the guest from the bundle and never uses the image, but `container` still pulls it. The command prints the container name.
 
    ```text
    mac1
@@ -228,7 +228,7 @@ The plugin boots only bundles under your home directory. For a bundle elsewhere,
    ~/.parbake/root/bin/container ls
    ```
 
-   The `OS` column shows the placeholder image, not the guest. The output below is illustrative.
+   `container` fills the `OS` and `ARCH` columns from the placeholder image, so they read `linux` and `arm64`. The guest runs macOS, as `sw_vers` in the next step shows. The output below is illustrative.
 
    ```text
    ID    IMAGE                            OS     ARCH   STATE    IP          CPUS  MEMORY   STARTED

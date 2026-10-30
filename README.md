@@ -259,7 +259,10 @@ container rm mac1
 - `runtime-macos.readiness-timeout` sets how many seconds the start waits for the guest agent after
   the boot (default 180). It applies to a bundle whose `Agent` file says an agent is installed. The
   guest is stopped and the start fails when the agent does not answer in time.
-- The image reference is required by the CLI and otherwise unused.
+- `container run` needs an image reference, so `alpine` stands in. Parbake boots the guest from
+  the bundle and never uses the image, but `container` still pulls it.
+- `container ls` fills the `OS` and `ARCH` columns from that image, so a macOS guest shows `linux`.
+  `container exec <name> sw_vers` shows the guest.
 - The guest gets at least 4 GiB of memory.
 
 ## Limitations {#limitations}
