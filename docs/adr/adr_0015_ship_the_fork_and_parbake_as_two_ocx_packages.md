@@ -509,3 +509,4 @@ OCX visible to the apple/container project, with no second index to run.
 - 2026-10-28: accepted after the attended host run of both packages.
 - 2026-10-28: aligned with the OCX CI recipes (tags file, claim workflow, token scope).
 - 2026-10-29: classic `public_repo` token, claim branch admitted to the `release` environment, after the first claim runs.
+- 2026-10-30: docs verify and install by the `ghcr.io` names. Trust policies match those names, and OCX 0.6.5 cannot verify through an `ocx.sh` name.

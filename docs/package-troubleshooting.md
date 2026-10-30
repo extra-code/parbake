@@ -7,8 +7,8 @@ This page lists the problems that appear when you run the `container` and `parba
 The commands below use two variables. They last only for the current terminal. Set them to the references you run.
 
 ```bash
-CONTAINER_PKG=ocx.sh/extra-code/container:1.6.1_01
-PARBAKE_PKG=ocx.sh/extra-code/parbake:0.1.0
+CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_01
+PARBAKE_PKG=ghcr.io/extra-code/parbake:0.1.0
 ```
 
 Most problems show in one line. Run it after every start, stop or upgrade.
@@ -40,6 +40,14 @@ ocx package install --link ~/.parbake/container "$CONTAINER_PKG"
 ```
 
 For `~/.parbake/plugin`, move that path and install with `"$PARBAKE_PKG"`.
+
+## Warning: `no trust policy covers` during an install
+
+This issue occurs when the install reference does not match a trust policy, for example an `ocx.sh/extra-code/…` name. The policies match the `ghcr.io/extra-code/…` names. OCX installs the package without checking its signature.
+
+Check: the install prints `no trust policy covers '<reference>'` and `without signature verification`.
+
+Fix: set the variables to the `ghcr.io` names above and install again. An `ocx.sh` name with a matching policy fails instead, because OCX 0.6.5 cannot check a signature through the index name.
 
 ## Error: the stock services answer instead of the fork's
 
