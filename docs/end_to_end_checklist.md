@@ -6,6 +6,16 @@ Run this checklist before a release, and after a change to the runtime, the gues
 It builds a bundle, boots guests and checks the failure paths that `task check` does not reach.
 It ends with the development services stopped and the installed services running again.
 
+## Scripted package run
+
+`task e2e:package` runs the published packages through install, verify, bundle and guest boot, and writes a receipt.
+`task e2e:package:candidate VERSION=X.Y.Z` runs the same steps against a local candidate package before the tag.
+
+Both are attended and stop the stock services. `PKG_E2E_ATTENDED=1` allows a run without a terminal.
+Receipts land in `~/.parbake-e2e/receipts/<run-id>.json`, and the last line reads `RESULT pass|fail|refused <receipt>`.
+`PKG_E2E_RESTORE_IMAGE` names a local restore image.
+This checklist still covers the dev-build failure paths.
+
 ## Run header
 
 Fill this table before step 1.
