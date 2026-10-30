@@ -2,11 +2,11 @@
 
 ## Status
 
-- State:   review
+- State:   done
 - Tier:    high
 - Tier-grammar: 5
 - Updated: 2026-10-30
-- Next:    human: push the branch, open the PR, merge
+- Next:    none — merged as PR #7
 - Finalized: 2026-10-30 local-only by request — four signed commits on origin/main cef6209, release gate `task clean check` green, not pushed
 - H3 (2026-10-30, attended): published run `RESULT pass` (run-id 20261030T133021Z-975ec09d); parallel start
   `RESULT refused` by P04 (20261030T133042Z-2ed7c5ae); repeat `RESULT pass` (20261030T134115Z-3c52dcba);
