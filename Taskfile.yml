@@ -124,6 +124,7 @@ tasks:
       - task: lint:reuse
       - task: lint:boundaries
       - task: lint:release
+      - task: lint:e2e
       - task: lint:coverage
 
   lint:reuse:
@@ -148,6 +149,10 @@ tasks:
     cmds:
       - scripts/release.sh --self-test
       - scripts/package.sh --self-test
+
+  lint:e2e:
+    cmds:
+      - scripts/package-e2e.sh --self-test
 
   lint:coverage:
     cmds:
@@ -183,6 +188,30 @@ tasks:
         vars:
           VERSION: "{{.VERSION}}"
       - scripts/package.sh all "{{.VERSION}}"
+
+  e2e:package:
+    desc: Run the package end-to-end run against the published packages (attended)
+    interactive: true
+    cmds:
+      - scripts/package-e2e.sh run
+
+  e2e:package:candidate:
+    desc: "Run the package end-to-end run against a locally built candidate: task e2e:package:candidate VERSION=X.Y.Z (attended)"
+    interactive: true
+    requires:
+      vars: [VERSION]
+    env:
+      PKG_E2E_VERSION: "{{.VERSION}}"
+    cmds:
+      - |
+        if ! printf '%s\n' "$PKG_E2E_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "VERSION must be X.Y.Z, got \"$PKG_E2E_VERSION\"" >&2
+          exit 2
+        fi
+        if [ ! -f ".build/package/parbake-$PKG_E2E_VERSION.tar.xz" ]; then
+          "{{.TASK_EXE}}" package VERSION="$PKG_E2E_VERSION"
+        fi
+      - scripts/package-e2e.sh run --candidate "$PKG_E2E_VERSION"
 
   release:notes:
     desc: >-
