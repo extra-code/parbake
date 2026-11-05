@@ -85,3 +85,4 @@ perspectives:
   State plan-approved). Research: `.agents/research/research_package_e2e_ocx.md`.
 - 2026-10-30 /hex-execute plan_package_e2e → review: W0, A1, A2, B merged, one review call and one fix pass,
   `task check` green; H3 (attended host runs) open before /hex-finalize.
+- 2026-10-30 plan_package_e2e → done (merged as PR #7); active-plan pointer cleared, no plan in flight.

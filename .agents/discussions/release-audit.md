@@ -133,7 +133,7 @@ The goal loop (`/hex-loop`) does the work unattended, in two stages. The reposit
 ## Research
 
 - `.agents/research/research_release_audit_codebase_recon.md`: codebase inventory covering features against the specs, the test map, duplication, architecture, security surfaces and docs drift.
-- `.agents/research/research_release_readiness_bar.md`: how Tart, Lima, UTM and apple/container handled their first releases, plus OpenSSF Best Practices, Scorecard, SLSA and the CRA.
+- `.agents/research/research_release_readiness_bar.md`: how comparable VM tools and apple/container handled their first releases, plus OpenSSF Best Practices, Scorecard, SLSA and the CRA.
 - `.agents/research/research_release_audit_council.md`: three blind seats (premortem, operability, simplicity) on which criteria block the release.
 - `.agents/research/research_release_audit_archaeology.md`: replaced approaches, open items, churn, recorded validations.
 - `.agents/research/research_release_audit_field_pitfalls.md`: field reports on VZ slot leaks, headless keychain access, vmnet and DHCP, shutdown, version skew and disk space.

@@ -28,7 +28,7 @@ Parbake component: `MacOSVirtualMachine` and the limit for a third guest.
 
 - **What is reported:**
   - After the guest shuts itself down, the VM reports `.stopped`, but the next `start()` fails with code 6, `VZErrorVirtualMachineLimitExceeded`.
-  - Only rebooting the host helps. Tart users report the same.
+  - Only rebooting the host helps. Users of another Virtualization.framework VM tool report the same.
   - Seen on macOS 26.5 and still open at Apple (FB22967193). [thread 830119](https://developer.apple.com/forums/thread/830119)
 - **Check:**
   - Run N create/shutdown cycles through the guest's own `shutdown -h now`, and confirm that start still succeeds.
@@ -51,7 +51,7 @@ Parbake component: `GuestDHCPServer` and the container network.
 - **What is reported:**
   - When the last interface leaves a `vmnet_network_ref`, its DHCP reservations and port forwards are lost.
   - If the only guest restarts, the interface is created again about 1 s later (macOS 26.6.2 and 27.0; FB24895271; apple/container#2051). [thread 847642](https://developer.apple.com/forums/thread/847642)
-  - macOS's own DHCP server gives 24-hour leases on a /24, which run out when CI creates many guests. [softnet](https://github.com/cirruslabs/softnet/blob/main/README.md)
+  - macOS's own DHCP server gives 24-hour leases on a /24, which run out when CI creates many guests. A networking helper of another VM tool documents this.
 - **Check:**
   - Restart the only guest on a network, then tear the network down in the order apple/container uses.
   - Confirm the guest keeps its address and that no address is reused while the old guest is still alive.
@@ -73,7 +73,7 @@ Parbake component: `parbake install` and `create`.
 - **What is reported:**
   - Installing a macOS 27 guest from a 26.6 host fails; build on a 27 host instead. [thread 829576](https://developer.apple.com/forums/thread/829576)
   - A black screen appears after updating a guest to 26.7 on a 27.0 host. [thread 847322](https://developer.apple.com/forums/thread/847322)
-  - The installer keeps working in the background after create returns; Tart's Packer plugin adds `create_grace_time` for that. [packer](https://developer.hashicorp.com/packer/integrations/cirruslabs/tart/v1.9.0/components/builder/tart)
+  - The installer keeps working in the background after create returns. An image-builder plugin of another VM tool adds a grace time after create for that.
 - **Check:**
   - Record the host and guest version pair.
   - Make sure the base is used only after the install has finished.
@@ -103,5 +103,5 @@ That reflects how far the search reached, not that these problems are absent.
 
 ## leads
 
-- Search the GitHub trackers directly: cirruslabs/tart, apple/container#2051, apple/containerization (vsock) and lima-vm/lima.
+- Search the GitHub trackers directly: apple/container#2051, apple/containerization (vsock), and the trackers of comparable VM tools.
 - Read threads 849681 and 822025 in full.
