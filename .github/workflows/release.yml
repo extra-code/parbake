@@ -206,14 +206,27 @@ jobs:
 
       # Anonymous on purpose: with GITHUB_TOKEN, ghcr.io answers the referrers endpoint with 401
       # instead of 404, so ocx never falls back to the sha256-<digest> tag. It also checks what users see.
+      # Right after a push the anonymous referrers call also answers 401 and ocx exits 69, so only 69 retries.
       - name: Verify the pushed signature
         env:
           VERSION: ${{ needs.release.outputs.version }}
         run: |
-          ocx package verify -p darwin/arm64 \
-            --certificate-identity "https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v${VERSION}" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "ghcr.io/extra-code/parbake:${VERSION}"
+          for attempt in $(seq 1 20); do
+            rc=0
+            ocx package verify -p darwin/arm64 \
+              --certificate-identity "https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v${VERSION}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "ghcr.io/extra-code/parbake:${VERSION}" || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              exit 0
+            fi
+            if [ "$rc" -ne 69 ]; then
+              exit "$rc"
+            fi
+            echo "attempt ${attempt}: the registry is not ready, retrying in 30 s" >&2
+            sleep 30
+          done
+          exit 69
 
   announce:
     name: announce the package to the OCX index
