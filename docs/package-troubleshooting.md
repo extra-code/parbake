@@ -7,8 +7,8 @@ This page lists the problems that appear when you run the `container` and `parba
 The commands below use two variables. They last only for the current terminal. Set them to the references you run.
 
 ```bash
-CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_01
-PARBAKE_PKG=ghcr.io/extra-code/parbake:0.1.0
+CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_02
+PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.0
 ```
 
 Most problems show in one line. Run it after every start, stop or upgrade.
@@ -51,7 +51,7 @@ Fix: set the variables to the `ghcr.io` names above and install again. An `ocx.s
 
 ## Error: the first `run` waits at `[0/6]`
 
-This issue occurs when the login keychain holds a registry login that another `container` build stored, in the keychain domain `com.apple.container.registry`. The fork's images service reads it before it fetches the image, and macOS asks once for each new build.
+This issue occurs when the login keychain holds a registry login that another `container` build stored, in the keychain domain `com.apple.container.registry`. The fork's images service reads it before it fetches the image, and macOS asks once for each new build. This applies only to container `1.6.1_01` and earlier.
 
 Check: `run` shows `[0/6]` for minutes, and a keychain dialog asks to allow access for the registry host, such as `registry-1.docker.io`.
 

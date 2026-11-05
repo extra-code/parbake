@@ -2,6 +2,14 @@
 
 # Changelog
 
+## v0.2.0
+
+### Changed
+
+- The plugin declares that it needs no image and runs `darwin/arm64`. It pairs with `ocx.sh/extra-code/container:1.6.1_02`, which carries the image-less runtime patch.
+- `container run` passes `none` as the image argument. `container` pulls nothing and stores `<none>`.
+- `container ls` shows `<none>` with `darwin` and `arm64` for a Parbake guest.
+
 ## v0.1.0
 
 ### Added

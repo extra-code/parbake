@@ -16,3 +16,5 @@ type = "runtime"
 requiresKernel = false
 requiresInitImage = false
 requiresImageSnapshot = false
+requiresImage = false
+platform = "darwin/arm64"

@@ -1,5 +1,5 @@
 {
-  "originHash" : "4d50ee832b594a26889e4f7a7907d87d9284729a3e9099d361095707ebb84a66",
+  "originHash" : "39806b276a6cc6b19ec518b611bc8c09e68c833d28299ff943916c208d05c837",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/extra-code/container.git",
       "state" : {
-        "revision" : "0f8245481903d4db3fe701bbf0750924b450bc4d"
+        "revision" : "abc48183c73d1dd0bba1a57cabe3569251010f7d"
       }
     },
     {

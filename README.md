@@ -34,7 +34,7 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 - The guest agent is experimental. Its protocol and the bundle `Agent` file may change before a stable release.
 - The supported host is macOS 27 on Apple silicon, see [ADR 0007](docs/adr/adr_0007_hosts_run_macos_27_and_disks_are_asif.md).
 - The tested guest runs macOS 27.
-- Parbake needs apple/container `804209b1` with three runtime-plugin commits, tag `parbake-804209b1`
+- Parbake needs apple/container `804209b1` with the runtime-plugin commits, tag `parbake-804209b1.2`
   of the [extra-code/container](https://github.com/extra-code/container) fork.
   A stock `container` release is unsupported.
 
@@ -240,7 +240,7 @@ container run -d --name mac1 \
   --runtime container-runtime-macos \
   --label runtime-macos.bundle=$HOME/VM.bundle \
   --cpus 4 --memory 8G \
-  alpine
+  none
 container exec mac1 sw_vers           # needs the guest agent
 container stop mac1
 container rm mac1
@@ -259,10 +259,9 @@ container rm mac1
 - `runtime-macos.readiness-timeout` sets how many seconds the start waits for the guest agent after
   the boot (default 180). It applies to a bundle whose `Agent` file says an agent is installed. The
   guest is stopped and the start fails when the agent does not answer in time.
-- `container run` needs an image reference, so `alpine` stands in. Parbake boots the guest from
-  the bundle and never uses the image, but `container` still pulls it.
-- `container ls` fills the `OS` and `ARCH` columns from that image, so a macOS guest shows `linux`.
-  `container exec <name> sw_vers` shows the guest.
+- The `container` CLI needs an image argument, but the Parbake runtime needs no image. So
+  `container` pulls nothing and stores the image as `<none>`.
+- `container ls` shows `<none>` with `darwin` and `arm64`. `container exec <name> sw_vers` shows the guest.
 - The guest gets at least 4 GiB of memory.
 
 ## Limitations {#limitations}

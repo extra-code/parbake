@@ -172,7 +172,7 @@ run() {
         --label "runtime-macos.bundle=${bundle}" \
         --cpus 4 --memory 8G \
         "$@" \
-        alpine
+        none
 }
 
 logs() {

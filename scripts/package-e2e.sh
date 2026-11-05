@@ -63,7 +63,7 @@ TROUBLESHOOTING="${REPO_ROOT}/docs/package-troubleshooting.md"
         E01:trust-policy E02:verify-container E03:verify-parbake E04:verify-negative
         E05:local-registry E06:install-container E07:install-parbake E08:build-root
         E09:versions E10:stop-stock E11:start-sandbox E12:create-bundle
-        E13:pull-and-run E14:wait-running E15:exec-guest E16:stop-and-remove
+        E13:run-guest E14:wait-running E15:exec-guest E16:stop-and-remove
     )
     readonly PREFLIGHTS=(P01 P02 P03 P04 P05 P06 P07 P08 P09 P10 P11)
 
@@ -697,9 +697,6 @@ preflight() {
     p09_containers || return 3
     p10_references || return 3
     p11_restore_image || return 3
-    if "${T_SECURITY}" find-internet-password -s registry-1.docker.io >/dev/null 2>&1; then
-        printf 'note: a registry-1.docker.io login exists; macOS may ask once at E13 for the new container build to read it\n'
-    fi
 }
 
 # --- lock ------------------------------------------------------------------------------------
@@ -1003,7 +1000,7 @@ recover_gone() { [[ "$(apiserver_program)" != "${ROOT}/"* ]]; }
 
 # --- steps -----------------------------------------------------------------------------------
 
-readonly CONTAINER_VERSION_RE='^container CLI version parbake-[0-9a-f]+ .*commit: [0-9a-f]+'
+readonly CONTAINER_VERSION_RE='^container CLI version parbake-[0-9a-f]+[0-9A-Za-z._-]* .*commit: [0-9a-f]+'
 # Network signatures only. "Not authorized: url .../referrers/" is the known registry referrers 401
 # that clears on a retry; a bare "registry operation failed" or "ssl" is not one.
 readonly NETWORK_RE='could not resolve|connection (refused|reset)|timed out|network is unreachable|tls handshake|http 5[0-9][0-9]|status code 5[0-9][0-9]|not authorized: url [^ ]*/referrers/'
@@ -1508,19 +1505,10 @@ e12_create_bundle() {
     STEP_DETAIL="bundle created"
 }
 
-e13_pull_and_run() {
-    local name="e2e-${RUN_ID}" hint=""
-    capture_retry 600 "${S}/root/bin/container" image pull alpine
-    if [[ "${CAP_RC}" -ne 0 ]]; then
-        if [[ "${CAP_RC}" -eq 124 ]] && "${T_SECURITY}" find-internet-password -s registry-1.docker.io >/dev/null 2>&1; then
-            hint="; a registry login in the keychain may wait for a dialog (docs/package-troubleshooting.md)"
-        fi
-        cap_fail "container image pull alpine" || true
-        STEP_DETAIL="${STEP_DETAIL}${hint}"
-        return 1
-    fi
+e13_run_guest() {
+    local name="e2e-${RUN_ID}"
     capture 120 "${S}/root/bin/container" run -d --name "${name}" --runtime container-runtime-macos \
-        --label "runtime-macos.bundle=${S}/bundle/VM.bundle" --cpus 4 --memory 8G alpine
+        --label "runtime-macos.bundle=${S}/bundle/VM.bundle" --cpus 4 --memory 8G none
     [[ "${CAP_RC}" -eq 0 ]] || cap_fail "container run" || return 1
     printf '%s\n%s\n' "${CAP_OUT}" "${CAP_ERR}" | grep -Fq "${name}" ||
         step_fail product "container run did not print ${name}" || return 1
@@ -1536,8 +1524,11 @@ e14_wait_running() {
         row="$(awk -v n="${name}" '$1 == n { print; exit }' <<<"${CAP_OUT}")"
         if [[ -n "${row}" ]]; then
             read -r -a cols <<<"${row}"
+            # ID IMAGE OS ARCH STATE IP ...
             if [[ "${cols[4]:-}" == running && "${cols[5]:-}" =~ ^[0-9]+(\.[0-9]+){3}/[0-9]+$ ]]; then
-                STEP_DETAIL="running at ${cols[5]}"
+                [[ "${cols[1]:-}" == "<none>" && "${cols[2]:-}" == darwin && "${cols[3]:-}" == arm64 ]] ||
+                    step_fail product "${name} lists IMAGE ${cols[1]:-}, OS ${cols[2]:-}, ARCH ${cols[3]:-}; expected <none> darwin arm64" || return 1
+                STEP_DETAIL="running at ${cols[5]}, <none> darwin arm64"
                 return 0
             fi
         fi
@@ -1579,7 +1570,7 @@ run_steps() {
         e01_trust_policy e02_verify_container e03_verify_parbake e04_verify_negative
         e05_local_registry e06_install_container e07_install_parbake e08_build_root
         e09_versions e10_stop_stock e11_start_sandbox e12_create_bundle
-        e13_pull_and_run e14_wait_running e15_exec_guest e16_stop_remove
+        e13_run_guest e14_wait_running e15_exec_guest e16_stop_remove
     ) i
     for i in "${!fns[@]}"; do
         run_step "${STEPS[i]%%:*}" "${fns[i]}" || return 1
@@ -2094,14 +2085,14 @@ case "$1 $2" in
     "ls ")
         echo "ID IMAGE OS ARCH STATE IP CPUS MEMORY STARTED"
         while IFS= read -r id; do
-            [[ -z "${id}" ]] || printf '%s alpine:latest macOS arm64 %s 192.168.64.2/24 4 8192 MB 2026-10-30T10:00:00Z\n' "${id}" "$(cat "${ST_STATE}/sbx_row_state" 2>/dev/null || echo running)"
+            [[ -z "${id}" ]] || printf '%s <none> %s arm64 %s 192.168.64.2/24 4 8192 MB 2026-10-30T10:00:00Z\n' "${id}" "$(cat "${ST_STATE}/sbx_row_os" 2>/dev/null || echo darwin)" "$(cat "${ST_STATE}/sbx_row_state" 2>/dev/null || echo running)"
         done <"${ST_STATE}/sbx_containers"
         ;;
-    "image pull")
-        [[ ! -e "${ST_STATE}/pull_fail" ]] || { echo "error: dial tcp: connection refused" >&2; exit 1; }
-        echo pulled
+    "run -d")
+        [[ "${*: -1}" == none ]] || { echo "error: unexpected image argument ${*: -1}" >&2; exit 1; }
+        echo "$4" >>"${ST_STATE}/sbx_containers"
+        echo "$4"
         ;;
-    "run -d") echo "$4" >>"${ST_STATE}/sbx_containers"; echo "$4" ;;
     "exec "*) printf 'ProductName:\t\tmacOS\nProductVersion:\t\t%s\nBuildVersion:\t\t99A1\n' "$(cat "${ST_STATE}/guest_version" 2>/dev/null || echo 27.0.1)" ;;
     "stop "*) echo "$2" ;;
     "rm -f") grep -vFx -- "$3" "${ST_STATE}/sbx_containers" >"${ST_STATE}/sbx_containers.new" 2>/dev/null; mv -f "${ST_STATE}/sbx_containers.new" "${ST_STATE}/sbx_containers" ;;
@@ -2653,6 +2644,12 @@ self_test_steps() {
     st_expect_run "a container that never runs times out at E14" "" 1 PKG_E2E_RUN_TIMEOUT=1
     st_check "E14 failed as timeout, cleanup restored the stock services and stopped the sandbox" \
         test "$(st_json "${ST_FILE}" steps.13.result)" = fail -a "$(st_json "${ST_FILE}" steps.13.detail | cut -c1-8)" = timeout: -a "$(st_calls "stock system start")" = 1 -a "$(st_calls "sandbox system stop")" = 1 -a "$(st_json "${ST_FILE}" cleanup.stock_restored)" = true
+
+    st_reset
+    echo linux >"${ST_STATE}/sbx_row_os"
+    st_expect_run "a container listed as linux fails E14" "" 1 PKG_E2E_RUN_TIMEOUT=1
+    st_check "E14 failed as product, naming the expected platform" \
+        test "$(st_json "${ST_FILE}" steps.13.result)" = fail -a "$(st_json "${ST_FILE}" steps.13.detail | cut -c1-8)" = product: -a "$(grep -c 'expected <none> darwin arm64' "${ST_FILE}" || true)" = 1
 
     st_reset
     echo 4 >"${ST_STATE}/ocx_sleep"
