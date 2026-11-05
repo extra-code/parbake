@@ -15,8 +15,8 @@ This package holds the plugin and the `parbake` command. It runs with [`extra-co
 Install both packages, each behind a link under `~/.parbake`:
 
 ```bash
-ocx package install --link ~/.parbake/container ghcr.io/extra-code/container:1.6.1_01
-ocx package install --link ~/.parbake/plugin ghcr.io/extra-code/parbake:0.1.0
+ocx package install --link ~/.parbake/container ghcr.io/extra-code/container:1.6.1_02
+ocx package install --link ~/.parbake/plugin ghcr.io/extra-code/parbake:0.2.0
 ```
 
 The install lines use the registry names, because the signature trust policies match them.

@@ -86,3 +86,13 @@ perspectives:
 - 2026-10-30 /hex-execute plan_package_e2e → review: W0, A1, A2, B merged, one review call and one fix pass,
   `task check` green; H3 (attended host runs) open before /hex-finalize.
 - 2026-10-30 plan_package_e2e → done (merged as PR #7); active-plan pointer cleared, no plan in flight.
+- 2026-10-30 /hex-discuss fork-imageless-runtime → plan: `.agents/discussions/fork-imageless-runtime.md`
+  (fork patch: runtime plugins with `requiresImage = false` and a declared platform; variant A now).
+  Variant B parked: `.agents/discussions/fork-imageless-runtime-b.md`.
+  Research: `.agents/research/research_imageless_runtime_{prior_art,upstream_threads,archaeology}.md`.
+- 2026-10-30 /hex-plan high → active plan: `.agents/plans/plan_fork_imageless_runtime.md`
+  (fork F0 → F1 ∥ Parbake P1 → I1 → H4; State plan-approved; three open questions with recommendations).
+- 2026-10-30 /hex-execute plan_fork_imageless_runtime → review: F0, F1 (fork, pushed abc48183 + tag parbake-804209b1.2),
+  P1, I1 merged, `task check` green; H4 (attended) and the fork release open before /hex-finalize.
+- 2026-11-05 plan_fork_imageless_runtime → fork release published (`container:1.6.1_02`, index PR merged); /hex-finalize next,
+  then the merge and `v0.2.0` (human) and H4 step 2.

@@ -29,7 +29,7 @@ Release, and the workflow's top-level `contents: read` stays.
 ## Context
 
 Parbake runs only under a `container` built from the extra-code/container fork. The fork carries
-four patches on top of apple/container. Trying Parbake today means cloning the fork, building it,
+runtime-plugin patches on top of apple/container. Trying Parbake today means cloning the fork, building it,
 building Parbake, installing the plugin into the fork's install root and signing everything ad hoc.
 `scripts/dev-env.sh` automates this for contributors, not for users.
 
@@ -509,4 +509,5 @@ OCX visible to the apple/container project, with no second index to run.
 - 2026-10-28: accepted after the attended host run of both packages.
 - 2026-10-28: aligned with the OCX CI recipes (tags file, claim workflow, token scope).
 - 2026-10-29: classic `public_repo` token, claim branch admitted to the `release` environment, after the first claim runs.
+- 2026-10-30: the patch count is not stated; the image-less runtime patch pairs with `1.6.1_02`.
 - 2026-10-30: docs verify and install by the `ghcr.io` names. Trust policies match those names, and OCX 0.6.5 cannot verify through an `ocx.sh` name.
