@@ -5,8 +5,10 @@
 .DS_Store
 .vscode
 
-# Installed by `grim install` from grimoire.lock
-.claude/rules/
-.claude/skills/
+.claude/settings.local.json
+# Written by `grim install` from grimoire.lock
 .agents/skills/
+.claude/skills/
+.claude/rules/
+.mcp.json
 container-runtime-macos-proposal.md
