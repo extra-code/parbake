@@ -2,11 +2,11 @@
 
 ## Status
 
-- State:   review
+- State:   done
 - Tier:    high
 - Tier-grammar: 5
-- Updated: 2026-11-05
-- Next:    /hex-finalize, then the human merges the PR and tags v0.2.0, then H4 step 2 (Release order steps 3 and 4)
+- Updated: 2026-11-13
+- Next:    none — merged as PR #10, v0.2.0 tagged; open: H4 step 2 (attended published-path run) and the fork rulesets below
 - Executed: F0, F1 (fork abc48183, pushed, tag parbake-804209b1.2), P1, I1 merged; one review call (fork seat, Parbake seat), Parbake fix pass; `task check` green at 6ca0d37, self-test green at dcb98c7
 - H4 step 1 (2026-10-30, attended): candidate `RESULT pass` (run-id 20261030T185550Z-997a8793); E13 without pull, E14 `<none> darwin arm64`, unsigned candidates verify exit 79, archive SHA-256 unchanged
 - Fork release (2026-10-30/31): `ocx-1.6.1_02` at `5bd4ddf9`, `container:1.6.1_02` pushed and signed (digest `sha256:15cd9fa3`); OCX package run 41134959892 red at `Verify the pushed signature` (401 from the ghcr referrers endpoint), a later anonymous verify passes; announce job skipped there, OCX announce run 41181740576 green, ocx-sh/index#1347 merged

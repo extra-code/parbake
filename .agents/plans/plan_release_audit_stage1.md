@@ -2,11 +2,11 @@
 
 ## Status
 
-- State:   review
+- State:   done
 - Tier:    xhigh
 - Tier-grammar: 5
-- Updated: 2026-10-23
-- Next:    /hex-finalize
+- Updated: 2026-11-13
+- Next:    none — landed in main's first history (up to 106c2c7, 2026-10-25), rewritten into a logical series, so the SHAs below are not on main; open residue below stays with the maintainer
 - Reviewed: 6b14c1de08b1328d0b6856a8bb377dedad32b9d4
 - Notes:
   - /hex-execute R1–R3 (2026-10-23), base 1412ab5: R1 979e1ca, c421a47, f346b73, 806f974; R2 d6767a2; R3 a48030d,

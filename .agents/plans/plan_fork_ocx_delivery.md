@@ -2,11 +2,11 @@
 
 ## Status
 
-- State:   review
+- State:   done
 - Tier:    xhigh
 - Tier-grammar: 5
-- Updated: 2026-10-28
-- Next:    human: push the branch, open the PR, land the fork's `ocx-package` (see Integration)
+- Updated: 2026-11-13
+- Next:    none — merged as PR #1; the fork's `ocx-package` landed
 - Finalized: 2026-10-28 local-only by request — five commits on origin/main 106c2c7, release gate `task clean check` green, not pushed
 - Repos:   <!-- frozen at execution start; bases are never re-resolved -->
   - `.`      /Users/christian/workspace/apple/extra-code/container-runtime-macos  trunk `main` base `1dd84f56ef70d3583e29dd4e96a7b0b8551351e0`  landed: no
