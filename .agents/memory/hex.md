@@ -96,3 +96,5 @@ perspectives:
   P1, I1 merged, `task check` green; H4 (attended) and the fork release open before /hex-finalize.
 - 2026-11-05 plan_fork_imageless_runtime → fork release published (`container:1.6.1_02`, index PR merged); /hex-finalize next,
   then the merge and `v0.2.0` (human) and H4 step 2.
+- 2026-11-13 plan_release_audit_stage1, plan_release_audit_stage2, plan_fork_ocx_delivery (PR #1), plan_fork_imageless_runtime (PR #10)
+  → done; active-plan pointer cleared, no plan in flight. Open follow-ups stay in their Status blocks.
