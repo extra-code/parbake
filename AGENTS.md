@@ -17,6 +17,22 @@ boots its own instance of a macOS VM bundle, and the instance is discarded with 
   `VZMacMachineIdentifier`, `VZMacGuestProvisioningOptions`, IPSW restore image, APFS
   `clonefile`, virtio vsock, virtiofs, container runtime plugin, XPC.
 
+## Setup
+
+Run `grim install` once after cloning and again after every change to `grimoire.lock`. It installs
+the skills, rules, bundles and MCP server that `grimoire.toml` declares into `.claude/`,
+`.agents/skills/` and `.mcp.json`. Git ignores the installed skills, rules and `.mcp.json`;
+`grimoire.toml` and `grimoire.lock` are tracked.
+
+`grimoire.lock` pins every artifact to a digest, so a new release never arrives on its own. Run
+`grim status --check` now and then: it reports `update_available` for every artifact whose
+declared tag has moved. `grim update` then pulls the new versions and rewrites `grimoire.lock`.
+Review the lock diff and commit it on its own.
+
+`.claude/agents/hex-*.md` and `.agents/memory/hex.md` are tracked project configuration: the
+model and effort per hex worker class, and the hex pointers. `/hex-init` changes them; a fresh
+clone needs only `grim install`.
+
 ## Verification
 
 Run `task check` before considering a change complete: it lints Swift and shell sources, builds,

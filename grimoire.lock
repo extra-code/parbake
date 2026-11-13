@@ -3,9 +3,15 @@ agent = []
 [metadata]
 lock_version = 1
 declaration_hash_version = 1
-declaration_hash = "sha256:ad274b6f93e0281967e6f672c800d4de4ffbdcdbf3bb5a85d2ffbbb2b0805f7e"
-generated_by = "grim 0.14.3"
-generated_at = "2026-10-21T15:40:21Z"
+declaration_hash = "sha256:8358d4548f28624b1fb45030b742ce2edf5440cb7c4def4825bba33c5a0f6f08"
+generated_by = "grim 0.15.1"
+generated_at = "2026-11-13T10:03:49Z"
+
+[[skill]]
+name = "ai-config-authoring"
+pinned = "ghcr.io/grimoire-rs/skills/ai-config-authoring@sha256:d3aa12c21b0a3bc34a10cbf3c98421206f8dbdbae974c7103edd70ec8bb6d59e"
+bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
+bundle_tag = "latest"
 
 [[skill]]
 name = "code-docs-cleanup"
@@ -39,6 +45,18 @@ bundle_tag = "latest"
 name = "docs-review"
 pinned = "ghcr.io/ocx-sh/lore/docs-review@sha256:e3a08c62f16489d01c00d702fc780c485d85f0cf3f22948e3d07ba09c7e0a3f4"
 bundle = "ghcr.io/ocx-sh/lore/docs-essentials"
+bundle_tag = "latest"
+
+[[skill]]
+name = "grim-authoring"
+pinned = "ghcr.io/grimoire-rs/skills/grim-authoring@sha256:c2577fa1899a2ba33fdfdd70bb9375ed1a3a3e48849d11bfad9cf7546b724e82"
+bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
+bundle_tag = "latest"
+
+[[skill]]
+name = "grim-usage"
+pinned = "ghcr.io/grimoire-rs/skills/grim-usage@sha256:5c729c75dee46d1c3aec22432ceeb04229fd87ebf23186ab74e2aedd0384be33"
+bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
 bundle_tag = "latest"
 
 [[skill]]
@@ -183,6 +201,10 @@ pinned = "ghcr.io/ocx-sh/lore/swift-quality@sha256:bb11fc764f95093e4427990ed64b1
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
 
+[[mcp]]
+name = "grim"
+pinned = "ghcr.io/grimoire-rs/mcp/grim@sha256:fa8236ade26b517a5a8e0ce16effc453e5f79d8d61da4badad16757dc43d52d3"
+
 [[bundle]]
 name = "code-docs-essentials"
 repo = "ghcr.io/ocx-sh/lore/code-docs-essentials"
@@ -224,6 +246,27 @@ id = "ghcr.io/ocx-sh/lore/docs-review:latest"
 kind = "rule"
 name = "docs-quality"
 id = "ghcr.io/ocx-sh/lore/docs-quality:latest"
+
+[[bundle]]
+name = "grim-essentials"
+repo = "ghcr.io/grimoire-rs/bundles/grim-essentials"
+tag = "latest"
+pinned = "ghcr.io/grimoire-rs/bundles/grim-essentials@sha256:3c6f53f4b44b12a65f7b6247de72323b864ee4a22fa420e77478ef95aab1e116"
+
+[[bundle.member]]
+kind = "skill"
+name = "ai-config-authoring"
+id = "ghcr.io/grimoire-rs/skills/ai-config-authoring:0"
+
+[[bundle.member]]
+kind = "skill"
+name = "grim-authoring"
+id = "ghcr.io/grimoire-rs/skills/grim-authoring:0"
+
+[[bundle.member]]
+kind = "skill"
+name = "grim-usage"
+id = "ghcr.io/grimoire-rs/skills/grim-usage:0"
 
 [[bundle]]
 name = "hex"

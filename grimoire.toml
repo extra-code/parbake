@@ -8,8 +8,12 @@ docs-essentials = "ghcr.io/ocx-sh/lore/docs-essentials:latest"
 hex = "ghcr.io/michael-herwig/arcana/hex:latest"
 shell-essentials = "ghcr.io/ocx-sh/lore/shell-essentials:latest"
 swift-essentials = "ghcr.io/ocx-sh/lore/swift-essentials:latest"
+grim-essentials = "ghcr.io/grimoire-rs/bundles/grim-essentials:latest"
 
 [skills]
 
 [rules]
 code-docs = "ghcr.io/ocx-sh/lore/code-docs:latest"
+
+[mcp]
+grim = "ghcr.io/grimoire-rs/mcp/grim:0"
