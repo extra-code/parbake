@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261105T191406Z-45087196.json"
+  ],
+  "first_seen": "2026-11-05T19:14:06Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "CONTRIBUTING.md",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-announce-fork-sync",
+  "kind": "defect",
+  "last_seen": "2026-11-05T19:14:06Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "Announce cannot sync the index fork when upstream changed a workflow file",
+  "v": 1,
+  "versions": []
+}

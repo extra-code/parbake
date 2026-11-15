@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261029T140418Z-c6afb0d9.json"
+  ],
+  "first_seen": "2026-10-29T13:55:00Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "release environment deployment policy (GitHub settings: branch main, tag v*)",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-claim-environment",
+  "kind": "defect",
+  "last_seen": "2026-10-29T13:55:00Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "Claim workflows dispatched from a branch are refused by the tag-only release environment",
+  "v": 1,
+  "versions": []
+}

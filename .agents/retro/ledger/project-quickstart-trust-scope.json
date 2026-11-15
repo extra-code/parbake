@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261030T095221Z-67c6636c.json"
+  ],
+  "first_seen": "2026-10-30T09:52:21Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "docs/quickstart.md",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-quickstart-trust-scope",
+  "kind": "defect",
+  "last_seen": "2026-10-30T09:52:21Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "high",
+  "status": "fixed",
+  "title": "Quickstart trust policies cover ghcr.io names while the install used ocx.sh names",
+  "v": 1,
+  "versions": []
+}

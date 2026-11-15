@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261026T223840Z-bdeed526.json"
+  ],
+  "first_seen": "2026-10-26T22:38:40Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "scripts/package.sh",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-selftest-leak-check",
+  "kind": "pitfall",
+  "last_seen": "2026-10-26T22:38:40Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "package.sh self-test leak check failed on an orchestrator's plan edit during the gate",
+  "v": 1,
+  "versions": []
+}

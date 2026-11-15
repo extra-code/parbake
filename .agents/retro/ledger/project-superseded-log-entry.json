@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261113T231346Z-851873f1.json"
+  ],
+  "first_seen": "2026-11-13T23:13:46Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "report .agents/retro/reports/2026-11-15.md P-10",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-superseded-log-entry",
+  "kind": "pitfall",
+  "last_seen": "2026-11-13T23:13:46Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "A superseded goal-log entry was read as current and an already fixed finding reported open",
+  "v": 1,
+  "versions": []
+}

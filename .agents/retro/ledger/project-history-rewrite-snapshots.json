@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261025T122429Z-58c035a0.json"
+  ],
+  "first_seen": "2026-10-25T12:24:29Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "report .agents/retro/reports/2026-11-15.md P-9",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-history-rewrite-snapshots",
+  "kind": "pitfall",
+  "last_seen": "2026-10-25T12:24:29Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "A history rewrite replays intermediate snapshots whose docs still carry host identifiers",
+  "v": 1,
+  "versions": []
+}
