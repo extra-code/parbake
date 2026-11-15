@@ -42,6 +42,9 @@ virtualization entitlement; `parbake-agent` is signed without it.
 /hex-execute pipeline or step), the run's integration and release gates satisfy "verify before
 commit"; commits use `--no-verify`.
 
+- Agent shells: run the gate as `env -u OCX_GLOBAL -u OCX_BINARY_PIN -u __OCX_ENV_STATE task check`. With
+  `OCX_GLOBAL=1` the OCX calls cannot see the project's `ocx.toml` groups and fail with `unknown group 'lint'`.
+  A single lint tool runs as `ocx exec -g lint <tool> -- <tool> …`; without `-g lint` it exits 65.
 - Coverage: `task coverage` prints line coverage per module. It reports only and sets no threshold.
 - Selective tests: `/usr/bin/swift test --filter <Suite or Suite/test>`; `task test` runs the
   full suite.
@@ -75,6 +78,9 @@ commit"; commits use `--no-verify`.
 - Agents never push, tag, or create branches or remotes; they propose the exact command. One exception:
   a goal prompt that the human pasted may name a `hex/<slug>` branch, and the session creates it.
 - Retro inbox entries (`.agents/retro/inbox/`) are local input for `/hex-retro`; never stage or commit them.
+- History rewrites: check every commit of the new series for host identifiers (`git log -p <base>..<new>`), not
+  only the tip. Copy out a file the rewrite untracks but keeps local first: `git reset --hard` onto the rewrite
+  deletes it.
 
 ## Documentation and code
 
@@ -97,6 +103,10 @@ needs, not which other tool uses it.
 | Goal | `.agents/goals/` | written by `/hex-loop` |
 
 Shape follows the documents already in each home; the shipped hex templates are the fallback only.
+
+Before writing an open item into a plan Status, confirm it at its source: the plan's row table and the code for a
+finding, later entries of a decisions log for a decision, and `ocx --remote index list` for a published tag (without
+`--remote` it reads a local cache).
 
 ## Architecture rules
 

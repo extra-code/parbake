@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261115T135244Z-fbc9c2ac.json"
+  ],
+  "first_seen": "2026-11-15T13:52:44Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "report .agents/retro/reports/2026-11-15.md P-10",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-ocx-index-local-cache",
+  "kind": "pitfall",
+  "last_seen": "2026-11-15T13:52:44Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "ocx index list without --remote shows a stale local cache, read as a missing release",
+  "v": 1,
+  "versions": []
+}

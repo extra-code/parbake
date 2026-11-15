@@ -1,0 +1,26 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261028T215847Z-e8adf1c5.json",
+    "20261030T221231Z-bb2dd2b1.json"
+  ],
+  "first_seen": "2026-10-28T22:10:00Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": ".github/workflows/release.yml",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-release-verify-registry",
+  "kind": "defect",
+  "last_seen": "2026-10-30T22:20:00Z",
+  "occurrences": 2,
+  "scope": "project",
+  "severity": "medium",
+  "status": "fixed",
+  "title": "Verify the pushed signature fails with 401 from ghcr.io referrers (token, then propagation delay)",
+  "v": 1,
+  "versions": []
+}

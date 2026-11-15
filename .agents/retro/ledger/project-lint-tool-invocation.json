@@ -1,0 +1,25 @@
+{
+  "artifact": "project",
+  "cost_min": 0,
+  "entries": [
+    "20261028T164428Z-6061d9b5.json"
+  ],
+  "first_seen": "2026-10-28T16:44:28Z",
+  "fixed": {
+    "at": "2026-11-15T14:17:15Z",
+    "by": "report .agents/retro/reports/2026-11-15.md P-8",
+    "stale_versions": []
+  },
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "project-lint-tool-invocation",
+  "kind": "inconvenient",
+  "last_seen": "2026-10-28T16:44:28Z",
+  "occurrences": 1,
+  "scope": "project",
+  "severity": "low",
+  "status": "fixed",
+  "title": "Lint tools need ocx exec -g lint; the plain project exec exits 65",
+  "v": 1,
+  "versions": []
+}

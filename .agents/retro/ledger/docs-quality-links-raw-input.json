@@ -1,0 +1,23 @@
+{
+  "artifact": "docs-quality",
+  "cost_min": 0,
+  "entries": [
+    "20261025T141208Z-351303f5.json"
+  ],
+  "first_seen": "2026-10-25T14:12:08Z",
+  "fixed": null,
+  "folded_at": "2026-11-15T14:15:27Z",
+  "folds": 1,
+  "id": "docs-quality-links-raw-input",
+  "kind": "defect",
+  "last_seen": "2026-10-25T14:12:08Z",
+  "occurrences": 1,
+  "scope": "harness",
+  "severity": "medium",
+  "status": "open",
+  "title": "links_raw.py documented with a directory argument but takes only files",
+  "v": 1,
+  "versions": [
+    "ghcr.io/ocx-sh/lore/docs-quality@sha256:065355e0be2ce30d340c71b57bb10c5360a954a166023199535cedee56cee96c"
+  ]
+}
