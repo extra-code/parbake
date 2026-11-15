@@ -45,6 +45,7 @@ final class FakeRuntimeEnvironment: @unchecked Sendable {
     private var shellHandler: @Sendable (_ command: String) async -> GuestShell.Result
     private var network: AllocatedNetwork?
     private var allocationError: (any Error)?
+    private var allocationGate: Gate?
     private var leases: [String: String] = [:]
     private var date = Date(timeIntervalSince1970: 1_000_000)
 
@@ -151,6 +152,13 @@ final class FakeRuntimeEnvironment: @unchecked Sendable {
     /// Makes `allocateNetwork` throw `error`.
     func failAllocateNetwork(with error: any Error) { lock.withLock { allocationError = error } }
 
+    /// Holds `allocateNetwork` at the returned gate until the test opens it.
+    func suspendAllocateNetwork() -> Gate {
+        let gate = Gate()
+        lock.withLock { allocationGate = gate }
+        return gate
+    }
+
     /// The address `leaseAddress` reports for `macAddress`.
     func setLease(_ address: String, for macAddress: String) { lock.withLock { leases[macAddress] = address } }
 
@@ -187,6 +195,7 @@ final class FakeRuntimeEnvironment: @unchecked Sendable {
             },
             allocateNetwork: { [self] _, _ in
                 record(.allocateNetwork)
+                try await lock.withLock { allocationGate }?.pass()
                 if let error = lock.withLock({ allocationError }) { throw error }
                 return lock.withLock { network }
             },

@@ -60,6 +60,28 @@ struct BootstrapRouteTests {
         #expect(second?.message == "container expected to be in created state, got: prepared")
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func testASecondBootstrapWhileTheFirstAllocatesTheNetworkIsRefusedAndOneGuestIsMade() async throws {
+        let fake = try FakeRuntimeEnvironment()
+        defer { fake.cleanUp() }
+        fake.provideNetwork(try .fake())
+        let allocation = fake.suspendAllocateNetwork()
+        let service = fake.makeService()
+        let client = RouteClient(service: service)
+
+        let first = Task { try await client.bootstrap() }
+        await allocation.untilArrived()
+        let second = await #expect(throws: ContainerizationError.self) { try await client.bootstrap() }
+        allocation.open()
+        _ = try await first.value
+
+        #expect(second?.code == .invalidState)
+        #expect(second?.message == "container expected to be in created state, got: bootstrapping")
+        #expect(fake.calls.filter { $0 == .allocateNetwork }.count == 1)
+        #expect(fake.calls.filter { if case .makeGuest = $0 { true } else { false } }.count == 1)
+        #expect(await service.currentState == .prepared)
+    }
+
     @Test
     func testBootstrapHandsTheAllocatedNetworkToTheGuest() async throws {
         let fake = try FakeRuntimeEnvironment()

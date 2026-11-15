@@ -41,11 +41,13 @@ actor RuntimeService {
 
     /// Where the container is in its life.
     ///
+    /// `created` becomes `bootstrapping` while the guest is prepared, and `created` again when that fails.
     /// `prepared` becomes `starting` when the first start of the init process boots the guest; `starting`
     /// becomes `running` when the boot returns, or `stopping` and then `stopped` when a stop force-stops the
     /// guest first, whether or not the forced stop succeeds.
     enum State {
         case created
+        case bootstrapping
         case prepared
         case starting
         case running
@@ -73,6 +75,8 @@ actor RuntimeService {
     private var nextShellRequest = 0
     /// Whether a SIGKILL stopped the guest forcibly; a shutdown request that ends after it has nothing left to do.
     private var forceStopRequested = false
+    /// Marks the container stopped once the guest exits; `shutdown` cancels it.
+    private var guestExitWatcher: Task<Void, Never>?
 
     /// The container's state, for tests; the `state` route reports less.
     var currentState: State { state }
@@ -99,7 +103,19 @@ actor RuntimeService {
         guard state == .created else {
             throw ContainerizationError(.invalidState, message: "container expected to be in created state, got: \(state)")
         }
+        // Set before the first await: a second bootstrap or a shutdown arriving during the network
+        // allocation would otherwise pass as `created` and prepare a second guest or revive a shut-down one.
+        state = .bootstrapping
+        do {
+            return try await prepareGuest(message)
+        } catch {
+            state = .created
+            throw error
+        }
+    }
 
+    /// Prepares the guest for `bootstrap` and leaves the container `prepared`.
+    private func prepareGuest(_ message: XPCMessage) async throws -> XPCMessage {
         let runtimeConfiguration = try environment.loadConfiguration(root)
         guard let configuration = runtimeConfiguration.containerConfiguration else {
             throw ContainerizationError(.invalidArgument, message: "runtime configuration is missing the container configuration")
@@ -231,8 +247,9 @@ actor RuntimeService {
         startedDate = environment.now()
         log.info("started macOS guest")
 
-        Task {
+        guestExitWatcher = Task {
             let exit = await virtualMachine.wait()
+            guard !Task.isCancelled else { return }
             await self.guestStopped(exit)
         }
 
@@ -314,7 +331,7 @@ actor RuntimeService {
         var status: RuntimeStatus
         var containers: [ContainerSnapshot] = []
         switch state {
-        case .created, .prepared, .starting, .stopped, .shuttingDown:
+        case .created, .bootstrapping, .prepared, .starting, .stopped, .shuttingDown:
             status = .stopped
         case .stopping:
             status = .stopping
@@ -452,6 +469,8 @@ actor RuntimeService {
         switch state {
         case .created, .prepared, .stopped, .stopping:
             state = .shuttingDown
+            guestExitWatcher?.cancel()
+            guestExitWatcher = nil
             await agent?.close()
             agent = nil
             await releaseNetwork()

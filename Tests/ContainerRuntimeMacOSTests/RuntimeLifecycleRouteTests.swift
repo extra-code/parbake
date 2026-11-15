@@ -150,6 +150,28 @@ struct ShutdownRouteTests {
         #expect(fake.releasedNetworks == 0)
         #expect(await service.currentState == .running)
     }
+
+    @Test(.timeLimit(.minutes(1)))
+    func testShutdownWhileTheBootstrapAllocatesTheNetworkIsRefusedAndTheBootstrapCompletes() async throws {
+        let fake = try FakeRuntimeEnvironment()
+        defer { fake.cleanUp() }
+        fake.provideNetwork(try .fake())
+        let allocation = fake.suspendAllocateNetwork()
+        let service = fake.makeService()
+        let client = RouteClient(service: service)
+
+        let bootstrap = Task { try await client.bootstrap() }
+        await allocation.untilArrived()
+        let refusal = await #expect(throws: ContainerizationError.self) { try await client.shutdown() }
+        allocation.open()
+        _ = try await bootstrap.value
+
+        #expect(refusal?.code == .invalidState)
+        #expect(await service.currentState == .prepared)
+        #expect(fake.releasedNetworks == 0)
+        _ = try await client.shutdown()
+        #expect(fake.releasedNetworks == 1)
+    }
 }
 
 struct UnsupportedRouteTests {

@@ -6,7 +6,7 @@
 - Tier:    xhigh
 - Tier-grammar: 5
 - Updated: 2026-11-13
-- Next:    none — landed in main's first history (up to 106c2c7, 2026-10-25), rewritten into a logical series, so the SHAs below are not on main; row PR (C-142, C-144) stays the open follow-up
+- Next:    none — landed in main's first history (up to 106c2c7, 2026-10-25), rewritten into a logical series, so the SHAs below are not on main; rows PR and PR2 closed C-142 and C-144, and the bootstrap and guest-exit follow-ups are fixed on `fix/runtime-start-races`
 - Reviewed: 1ff0d8de4293547a2af941cd5404ef76949c53f5
 - Notes:
   - Attended e2e resumed (2026-10-25) from step 3 on the same stamped build and bundles, after the human granted the
