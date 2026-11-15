@@ -6,7 +6,7 @@
 - Tier:    high
 - Tier-grammar: 5
 - Updated: 2026-11-15
-- Next:    none — merged as PR #10, v0.2.0 tagged, H4 step 2 passed; open: the fork rulesets and the 0.2.0 index entry below
+- Next:    none — merged as PR #10, v0.2.0 tagged, H4 step 2 passed; open: the fork rulesets below
 - Executed: F0, F1 (fork abc48183, pushed, tag parbake-804209b1.2), P1, I1 merged; one review call (fork seat, Parbake seat), Parbake fix pass; `task check` green at 6ca0d37, self-test green at dcb98c7
 - H4 step 1 (2026-10-30, attended): candidate `RESULT pass` (run-id 20261030T185550Z-997a8793); E13 without pull, E14 `<none> darwin arm64`, unsigned candidates verify exit 79, archive SHA-256 unchanged
 - H4 step 2 (2026-11-15, attended): published `RESULT pass` (run-id 20261115T123208Z-9d44585a), `parbake:0.2.0` and
@@ -15,7 +15,8 @@
   Receipts under `~/.parbake-e2e/receipts/`. Stock services restored.
 - Release v0.2.0 (run 42086813139): `parbake:0.2.0` pushed and signed (a local `ocx package verify` passes); the run is
   red at `Verify the pushed signature` (401 before the registry was ready, the retry came later in PR #11), so the
-  announce job was skipped and `ocx.sh/extra-code/parbake` lists only `0.1.0`.
+  announce job was skipped; the manual Announce run 42092224107 added `0.2.0,0.2,0,latest` (ocx-sh/index#1373, merged
+  2026-11-05).
 - Fork release (2026-10-30/31): `ocx-1.6.1_02` at `5bd4ddf9`, `container:1.6.1_02` pushed and signed (digest `sha256:15cd9fa3`); OCX package run 41134959892 red at `Verify the pushed signature` (401 from the ghcr referrers endpoint), a later anonymous verify passes; announce job skipped there, OCX announce run 41181740576 green, ocx-sh/index#1347 merged
 - Open (fork, human): I1 step 5 rulesets not applied as of 2026-11-05; `ocx tags` covers `refs/tags/ocx-*` only, `parbake` carries `deletion` only
 - Deferred (fork, Warn): configurationError ignores legacy config.json (safe fallback); unparsable plugin platform with requiresImage=false would take the image branch (unreachable, validate() rejects it); server accepts `<none>` for a snapshot-requiring runtime from non-CLI clients; raw error text in configurationError
