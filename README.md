@@ -34,7 +34,7 @@ How the plugin, the guest agent and Apple `container` work together: [docs/archi
 - The guest agent is experimental. Its protocol and the bundle `Agent` file may change before a stable release.
 - The supported host is macOS 27 on Apple silicon, see [ADR 0007](docs/adr/adr_0007_hosts_run_macos_27_and_disks_are_asif.md).
 - The tested guest runs macOS 27.
-- Parbake needs apple/container `804209b1` with the runtime-plugin commits, tag `parbake-804209b1.2`
+- Parbake needs apple/container `1.7.1` with the runtime-plugin commits, tag `parbake-a15b4609`
   of the [extra-code/container](https://github.com/extra-code/container) fork.
   A stock `container` release is unsupported.
 

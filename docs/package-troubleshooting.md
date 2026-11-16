@@ -7,8 +7,8 @@ This page lists the problems that appear when you run the `container` and `parba
 The commands below use two variables. They last only for the current terminal. Set them to the references you run.
 
 ```bash
-CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_02
-PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.0
+CONTAINER_PKG=ghcr.io/extra-code/container:1.7.1_01
+PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.1
 ```
 
 Most problems show in one line. Run it after every start, stop or upgrade.
