@@ -47,7 +47,7 @@ This issue occurs when the install reference does not match a trust policy, for 
 
 Check: the install prints `no trust policy covers '<reference>'` and `without signature verification`.
 
-Fix: set the variables to the `ghcr.io` names above and install again. An `ocx.sh` name with a matching policy fails instead, because OCX 0.6.5 cannot check a signature through the index name.
+Fix: set the variables to the `ghcr.io` names above and install again. With OCX 0.6.8, a policy whose scope is the `ocx.sh` name also works. With OCX 0.6.5 it fails, because that version cannot check a signature through the index name.
 
 ## Error: the first `run` waits at `[0/6]`
 
