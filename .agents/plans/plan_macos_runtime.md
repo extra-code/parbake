@@ -3,7 +3,7 @@
 ## Status
 
 - State:   in progress
-- Updated: 2026-10-25
+- Updated: 2026-11-17
 - Next:    step 7 (upstream) needs the organisation name; step 4 an Xcode download; step 5 can rerun with
   the identity of ADR 0010
 
@@ -46,6 +46,7 @@ Importing disk images of other VM tools is out of scope.
 | Controlled stop over SSH | done, exit 0 | ADR 0003 |
 | Fork rebased on apple/container `main`, containerization 0.53.0 | done | tag `parbake-804209b1` |
 | Fork rebased on apple/container `1.7.1`, containerization 0.54.0 | done | tag `parbake-a15b4609` |
+| `cleanup` subcommand that apple/container calls on delete (apple/container#2455) | open; with the next fork rebase onto a release that carries it | issue #20 |
 
 40 Swift tests green (`task check`). Booting a guest is manual (see Verification).
 
