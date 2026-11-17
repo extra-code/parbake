@@ -22,7 +22,7 @@ CONTAINER_PKG=ghcr.io/extra-code/container:1.7.1_01
 PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.1
 ```
 
-Use the `ghcr.io` names to verify and install. The catalog lists the packages as `ocx.sh/extra-code/…`, but OCX 0.6.5 cannot check a signature through an `ocx.sh` name, and the trust policies on this page match the `ghcr.io` names. An install through an `ocx.sh` name skips the signature check and prints `no trust policy covers`.
+Use the `ghcr.io` names to verify and install. The catalog lists the packages as `ocx.sh/extra-code/…`, but the trust policies on this page match the `ghcr.io` names, and OCX 0.6.5 cannot check a signature through an `ocx.sh` name. An install through an `ocx.sh` name skips the signature check and prints `no trust policy covers`.
 
 This page walks Parbake 0.2.1, which pairs with container 1.7.1_01. The [changelog](../CHANGELOG.md) lists every release and its pairing.
 
