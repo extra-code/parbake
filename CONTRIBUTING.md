@@ -3,9 +3,9 @@
 
 ## Set up
 
-Parbake builds against apple/container `804209b1` with the runtime-plugin commits on branch `parbake`,
-tag `parbake-804209b1.2` of the [extra-code/container](https://github.com/extra-code/container) fork.
-`Package.swift` pins that commit by revision and containerization 0.53.0, and SwiftPM fetches both.
+Parbake builds against apple/container `1.7.1` with the runtime-plugin commits on branch `parbake`,
+tag `parbake-a15b4609` of the [extra-code/container](https://github.com/extra-code/container) fork.
+`Package.swift` pins that commit by revision and containerization 0.54.0, and SwiftPM fetches both.
 
 ```bash
 git clone git@github.com:extra-code/parbake.git

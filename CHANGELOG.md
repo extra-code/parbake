@@ -2,6 +2,17 @@
 
 # Changelog
 
+## v0.2.1
+
+### Changed
+
+- Parbake builds against apple/container 1.7.1 and containerization 0.54.0. It pairs with `ocx.sh/extra-code/container:1.7.1_01`.
+
+### Fixed
+
+- A second bootstrap, or a shutdown, that arrives while the first bootstrap allocates the network is refused. Before, it could prepare a second guest.
+- A shutdown cancels the task that waits for the guest to exit.
+
 ## v0.2.0
 
 ### Changed

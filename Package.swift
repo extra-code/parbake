@@ -14,9 +14,9 @@ let package = Package(
     ],
     dependencies: [
         // apple/container with the runtime-plugin commits that provide `[runtimeConfig]` in the plugin config.
-        .package(url: "https://github.com/extra-code/container.git", revision: "abc48183c73d1dd0bba1a57cabe3569251010f7d"),
+        .package(url: "https://github.com/extra-code/container.git", revision: "c1e229c92ed4629979d5a1315f2bbced147747fc"),
         // Pinned to the containerization version that apple/container pins.
-        .package(url: "https://github.com/apple/containerization.git", exact: "0.53.0"),
+        .package(url: "https://github.com/apple/containerization.git", exact: "0.54.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.7.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.10.1"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),

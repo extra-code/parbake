@@ -11,7 +11,7 @@ boots its own instance of a macOS VM bundle, and the instance is discarded with 
 - **Users:** Mac mini CI hosts whose CI executors start macOS jobs through this runtime;
   developers testing macOS guests locally.
 - **Related repos:** apple/container, through the fork
-  [extra-code/container](https://github.com/extra-code/container) (tag `parbake-804209b1.2`, the
+  [extra-code/container](https://github.com/extra-code/container) (tag `parbake-a15b4609`, the
   runtime-plugin hooks this plugin builds against); apple/containerization.
 - **Research keywords:** Virtualization.framework, `VZMacOSBootLoader`, `VZMacHardwareModel`,
   `VZMacMachineIdentifier`, `VZMacGuestProvisioningOptions`, IPSW restore image, APFS
@@ -110,9 +110,9 @@ finding, later entries of a decisions log for a decision, and `ocx --remote inde
 
 ## Architecture rules
 
-- The package builds against apple/container `804209b1` plus the runtime-plugin commits on branch
-  `parbake`: tag `parbake-804209b1.2` of the extra-code/container fork, pinned by revision in `Package.swift`.
-  `Package.swift` pins containerization 0.53.0, the version the fork pins.
+- The package builds against apple/container `1.7.1` plus the runtime-plugin commits on branch
+  `parbake`: tag `parbake-a15b4609` of the extra-code/container fork, pinned by revision in `Package.swift`.
+  `Package.swift` pins containerization 0.54.0, the version the fork pins.
   `container run --runtime container-runtime-macos` needs the CLI built from that revision;
   `scripts/dev-env.sh build` builds it in `.build/dev-env/container` (`CONTAINER_SRC` overrides it).
 - Imports: no AppKit outside `Sources/parbake/Setup.swift`; `parbake-agent` imports neither

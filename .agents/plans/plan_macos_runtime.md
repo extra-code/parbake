@@ -45,6 +45,7 @@ Importing disk images of other VM tools is out of scope.
 | Container network, address in `container ls`, DHCP by the runtime | done; Linux container ↔ guest verified | ADR 0002 |
 | Controlled stop over SSH | done, exit 0 | ADR 0003 |
 | Fork rebased on apple/container `main`, containerization 0.53.0 | done | tag `parbake-804209b1` |
+| Fork rebased on apple/container `1.7.1`, containerization 0.54.0 | done | tag `parbake-a15b4609` |
 
 40 Swift tests green (`task check`). Booting a guest is manual (see Verification).
 

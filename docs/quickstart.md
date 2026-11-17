@@ -18,13 +18,13 @@ Two packages make the combination. [`container`](https://ocx.sh/catalog/extra-co
 Set both packages once. These variables last only for the current terminal, so run every step in it.
 
 ```bash
-CONTAINER_PKG=ghcr.io/extra-code/container:1.6.1_02
-PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.0
+CONTAINER_PKG=ghcr.io/extra-code/container:1.7.1_01
+PARBAKE_PKG=ghcr.io/extra-code/parbake:0.2.1
 ```
 
 Use the `ghcr.io` names to verify and install. The catalog lists the packages as `ocx.sh/extra-code/…`, but OCX 0.6.5 cannot check a signature through an `ocx.sh` name, and the trust policies on this page match the `ghcr.io` names. An install through an `ocx.sh` name skips the signature check and prints `no trust policy covers`.
 
-This page walks Parbake 0.2.0, which pairs with container 1.6.1_02. The [changelog](../CHANGELOG.md) lists every release and its pairing.
+This page walks Parbake 0.2.1, which pairs with container 1.7.1_01. The [changelog](../CHANGELOG.md) lists every release and its pairing.
 
 ## Verify the packages
 
@@ -34,7 +34,7 @@ Check where each package came from before you run it. This step comes first beca
 
    ```bash
    ocx package verify -p darwin/arm64 \
-     --certificate-identity "https://github.com/extra-code/container/.github/workflows/ocx-package.yml@refs/tags/ocx-1.6.1_02" \
+     --certificate-identity "https://github.com/extra-code/container/.github/workflows/ocx-package.yml@refs/tags/ocx-1.7.1_01" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com "$CONTAINER_PKG"
    echo "exit status: $?"
    ```
@@ -49,7 +49,7 @@ Check where each package came from before you run it. This step comes first beca
 
    ```bash
    ocx package verify -p darwin/arm64 \
-     --certificate-identity "https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v0.2.0" \
+     --certificate-identity "https://github.com/extra-code/parbake/.github/workflows/release.yml@refs/tags/v0.2.1" \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com "$PARBAKE_PKG"
    echo "exit status: $?"
    ```
@@ -102,7 +102,7 @@ The `container` package is a temporary patched build of Apple `container`. It go
 
    ```text
    Package                                Version                                Path
-   ghcr.io/extra-code/container:1.6.1_02  ghcr.io/extra-code/container:1.6.1_02  /Users/<you>/.parbake/container
+   ghcr.io/extra-code/container:1.7.1_01  ghcr.io/extra-code/container:1.7.1_01  /Users/<you>/.parbake/container
    ```
 
    A line `no trust policy covers …` means the install skipped the signature check. Check the reference and the policies, then install again.
