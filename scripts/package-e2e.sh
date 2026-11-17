@@ -25,7 +25,7 @@
 #   PKG_E2E_MIN_FREE_GB        Default 60. Free space the preflight demands under home
 #   PKG_E2E_RUN_TIMEOUT        Default 900. Seconds to wait for the container to run
 #   PKG_E2E_TOTAL_TIMEOUT      Default 5400. Ceiling in seconds for the whole run
-#   PKG_E2E_OCX_VERSION        Default 0.6.5. The ocx version the preflight requires
+#   PKG_E2E_OCX_VERSION        Default 0.6.8. The ocx version the preflight requires
 #   PKG_E2E_ROOT               Default ~/.parbake-e2e. Parent of sandboxes, receipts and the lock; an
 #                              existing directory must be empty or hold the .parbake-e2e-root marker
 #   PKG_E2E_ATTENDED           Default unset. 1 allows a run without a TTY
@@ -236,7 +236,7 @@ validate_params() {
     validate_number PKG_E2E_MIN_FREE_GB "${PKG_E2E_MIN_FREE_GB:-60}" || return 2
     validate_number PKG_E2E_RUN_TIMEOUT "${PKG_E2E_RUN_TIMEOUT:-900}" || return 2
     validate_number PKG_E2E_TOTAL_TIMEOUT "${PKG_E2E_TOTAL_TIMEOUT:-5400}" || return 2
-    [[ "${PKG_E2E_OCX_VERSION:-0.6.5}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage_error "PKG_E2E_OCX_VERSION is not X.Y.Z" || return 2
+    [[ "${PKG_E2E_OCX_VERSION:-0.6.8}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage_error "PKG_E2E_OCX_VERSION is not X.Y.Z" || return 2
     validate_root "${PKG_E2E_ROOT:-${HOME}/.parbake-e2e}" || return 2
 }
 
@@ -559,8 +559,8 @@ p02_tools() {
     done
     version="$("${T_OCX}" version 2>/dev/null)" || version=""
     version="$(tr -d '[:space:]' <<<"${version}")"
-    [[ "${version}" == "${PKG_E2E_OCX_VERSION:-0.6.5}" ]] ||
-        refuse P02 "ocx ${PKG_E2E_OCX_VERSION:-0.6.5} is required, found \"${version}\"" || return 1
+    [[ "${version}" == "${PKG_E2E_OCX_VERSION:-0.6.8}" ]] ||
+        refuse P02 "ocx ${PKG_E2E_OCX_VERSION:-0.6.8} is required, found \"${version}\"" || return 1
 }
 
 p03_attended() {
@@ -619,7 +619,7 @@ resolve_ref() {
     [[ -n "${tmp}" && "${tmp}" == */* ]] && rm -rf -- "${tmp}"
     [[ "${rc}" -eq 0 ]] || return 1
     out="$(tr -d '[:space:]' <<<"${out}")"
-    [[ "${out}" == "{\"${ref}\":[\"darwin/arm64\"]}" ]]
+    [[ "${out}" == "{\"schema_version\":1,\"items\":[{\"package\":\"${ref}\",\"platforms\":[{\"architecture\":\"arm64\",\"os\":\"darwin\"}]}]}" ]]
 }
 
 # ref_tag REF: the tag of REF.
@@ -1239,7 +1239,7 @@ verify_pkg() {
     local kind="$1" identity="$2" row
     capture 120 ocx_call --format json package verify -p darwin/arm64 --certificate-identity "${identity}" --certificate-oidc-issuer "${OIDC_ISSUER}" "$(run_ref "${kind}")"
     [[ "${CAP_RC}" -eq 0 ]] || cap_fail "verify" || return 1
-    row="$("${T_PLUTIL}" -extract data.certificate_identity raw -o - - <<<"${CAP_OUT}" 2>/dev/null)" || row=""
+    row="$("${T_PLUTIL}" -extract certificate_identity raw -o - - <<<"${CAP_OUT}" 2>/dev/null)" || row=""
     [[ "${row}" == "${identity}" ]] || step_fail product "the certificate identity is \"${row}\", expected \"${identity}\"" || return 1
     STEP_DETAIL="signed by ${identity}"
 }
@@ -1902,11 +1902,14 @@ STUB
 #!/bin/bash
 printf 'ocx %s\n' "$*" >>"${ST_STATE}/calls.log"
 printf 'home=%s insecure=%s nocfg=%s noproj=%s docker=%s config=%s | %s\n' "${OCX_HOME:-}" "${OCX_INSECURE_REGISTRIES:-}" "${OCX_NO_CONFIG:-}" "${OCX_NO_PROJECT:-}" "${DOCKER_CONFIG:-}" "${OCX_CONFIG:-}" "$*" >>"${ST_STATE}/ocx_env.log"
-if [[ "$1" == version ]]; then echo 0.6.5; exit 0; fi
+if [[ "$1" == version ]]; then echo 0.6.8; exit 0; fi
 if [[ "$*" == "--remote --format json index list --platforms "* ]]; then
     ref="${*: -1}"
-    if grep -Fxq -- "${ref}" "${ST_STATE}/ocx_missing" 2>/dev/null; then echo '{}'; exit 0; fi
-    printf '{\n  "%s": [\n    "darwin/arm64"\n  ]\n}\n' "${ref}"
+    if grep -Fxq -- "${ref}" "${ST_STATE}/ocx_missing" 2>/dev/null; then
+        printf '{\n  "schema_version": 1,\n  "items": [\n    {\n      "package": "%s",\n      "platforms": []\n    }\n  ]\n}\n' "${ref}"
+        exit 0
+    fi
+    printf '{\n  "schema_version": 1,\n  "items": [\n    {\n      "package": "%s",\n      "platforms": [\n        {\n          "architecture": "arm64",\n          "os": "darwin"\n        }\n      ]\n    }\n  ]\n}\n' "${ref}"
     exit 0
 fi
 if [[ "$1" == --config ]]; then
@@ -1938,7 +1941,7 @@ case "$1 $2" in
             exit 77
         fi
         [[ ! -e "${ST_STATE}/verify_bad_identity" ]] || identity="${identity}-other"
-        printf '{"schema_version":1,"command":"package verify","exit_code":0,"data":{"subject_digest":"sha256:4ec5","referrer_digest":"sha256:ab12","certificate_identity":"%s"}}\n' "${identity}"
+        printf '{"schema_version":2,"subject_digest":"sha256:4ec5","referrer_digest":"sha256:ab12","certificate_identity":"%s"}\n' "${identity}"
         exit 0
         ;;
     "package install")
@@ -2567,7 +2570,7 @@ self_test_steps() {
     st_check "the receipt has result pass, mode published, exit 0 and a script commit" \
         test "$(st_json "${ST_FILE}" result)" = pass -a "$(st_json "${ST_FILE}" mode)" = published -a "$(st_json "${ST_FILE}" exit)" = 0 -a -n "$(st_json "${ST_FILE}" script_commit)"
     st_check "the receipt names host, ocx and guest versions" \
-        test "$(st_json "${ST_FILE}" host.macos)" = 27.0 -a "$(st_json "${ST_FILE}" host.arch)" = arm64 -a "$(st_json "${ST_FILE}" ocx)" = 0.6.5 -a "$(st_json "${ST_FILE}" guest.macos)" = 27.0
+        test "$(st_json "${ST_FILE}" host.macos)" = 27.0 -a "$(st_json "${ST_FILE}" host.arch)" = arm64 -a "$(st_json "${ST_FILE}" ocx)" = 0.6.8 -a "$(st_json "${ST_FILE}" guest.macos)" = 27.0
     st_check "both packages carry a digest and verified true" \
         test "$(st_json "${ST_FILE}" packages.container.verified)" = true -a "$(st_json "${ST_FILE}" packages.parbake.verified)" = true
     st_check "the digests are sha256 values" \
