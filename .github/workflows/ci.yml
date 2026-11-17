@@ -31,6 +31,8 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
 
       - uses: ocx-sh/setup-ocx@eaeb6788da6191868a1310cc2bba93233b586369 # v1.4.1
+        with:
+          version: 0.6.8
 
       - name: Check that ocx.lock matches ocx.toml
         run: ocx lock --check
