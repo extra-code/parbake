@@ -3,20 +3,21 @@
   "cost_min": 0,
   "entries": [
     "20261028T215847Z-e8adf1c5.json",
-    "20261030T221231Z-bb2dd2b1.json"
+    "20261030T221231Z-bb2dd2b1.json",
+    "20261116T182018Z-502dbd39.json"
   ],
   "first_seen": "2026-10-28T22:10:00Z",
   "fixed": {
-    "at": "2026-11-15T14:17:15Z",
-    "by": ".github/workflows/release.yml",
+    "at": "2026-11-18T20:07:44Z",
+    "by": "682587f",
     "stale_versions": []
   },
-  "folded_at": "2026-11-15T14:15:27Z",
-  "folds": 1,
+  "folded_at": "2026-11-18T20:07:43Z",
+  "folds": 2,
   "id": "project-release-verify-registry",
   "kind": "defect",
-  "last_seen": "2026-10-30T22:20:00Z",
-  "occurrences": 2,
+  "last_seen": "2026-11-16T18:20:18Z",
+  "occurrences": 3,
   "scope": "project",
   "severity": "medium",
   "status": "fixed",
