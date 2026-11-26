@@ -4,18 +4,18 @@ agent = []
 lock_version = 1
 declaration_hash_version = 1
 declaration_hash = "sha256:8358d4548f28624b1fb45030b742ce2edf5440cb7c4def4825bba33c5a0f6f08"
-generated_by = "grim 0.15.1"
-generated_at = "2026-11-13T10:03:49Z"
+generated_by = "grim 0.16.0"
+generated_at = "2026-11-24T20:40:02Z"
 
 [[skill]]
 name = "ai-config-authoring"
-pinned = "ghcr.io/grimoire-rs/skills/ai-config-authoring@sha256:d3aa12c21b0a3bc34a10cbf3c98421206f8dbdbae974c7103edd70ec8bb6d59e"
+pinned = "ghcr.io/grimoire-rs/skills/ai-config-authoring:0@sha256:95ebdf61b629c6c3fde19ed4b26c92ea4cb5e96cd425c1f9b3eb703fff3ce7b5"
 bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "code-docs-cleanup"
-pinned = "ghcr.io/ocx-sh/lore/code-docs-cleanup@sha256:4b312606567dab8769e98fcf9770072bc425e6f2e9d1b71a3638e9c60bcaed18"
+pinned = "ghcr.io/ocx-sh/lore/code-docs-cleanup:latest@sha256:3951e99376a27f2a4e542f59164e44211f5ad8f299bf62432e254f1f114ad6ba"
 
 [[skill.bundles]]
 repo = "ghcr.io/ocx-sh/lore/code-docs-essentials"
@@ -30,180 +30,234 @@ repo = "ghcr.io/ocx-sh/lore/swift-essentials"
 tag = "latest"
 
 [[skill]]
+name = "code-docs-reference"
+pinned = "ghcr.io/ocx-sh/lore/code-docs-reference:0@sha256:dd926175cef02b20c73d7d70b13c6cfeb48b00380b6c7ccf8deee361eebb92e7"
+
+[[skill]]
 name = "docs-instrument"
-pinned = "ghcr.io/ocx-sh/lore/docs-instrument@sha256:fb3e1c487517dfacac9761ad95070479faa77a7a089e8fb61219dd813f92213b"
+pinned = "ghcr.io/ocx-sh/lore/docs-instrument:latest@sha256:2011d5e749ca4dde8eb611ca214931640b35492c6f187e652cf29202b1eb55bb"
 bundle = "ghcr.io/ocx-sh/lore/docs-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "docs-plan"
-pinned = "ghcr.io/ocx-sh/lore/docs-plan@sha256:09751a25d1535543ac0cae1a52273ec3e1938b9db577b83509de025508757180"
+pinned = "ghcr.io/ocx-sh/lore/docs-plan:latest@sha256:311b5da3a083e04e82a06f83a13983e731eee27512e57ca26d3e1da4c5852b0e"
 bundle = "ghcr.io/ocx-sh/lore/docs-essentials"
 bundle_tag = "latest"
 
 [[skill]]
+name = "docs-quality-reference"
+pinned = "ghcr.io/ocx-sh/lore/docs-quality-reference:0@sha256:b5a5c6ce0dda41ab0becade7d47e8a03d555d9ba4a26c5574a21f285ab7f931f"
+
+[[skill]]
 name = "docs-review"
-pinned = "ghcr.io/ocx-sh/lore/docs-review@sha256:e3a08c62f16489d01c00d702fc780c485d85f0cf3f22948e3d07ba09c7e0a3f4"
+pinned = "ghcr.io/ocx-sh/lore/docs-review:latest@sha256:ab38a96db2d2106b657fd0cc91ff3f0ee68fe6e7f737744e92b1e7655a296700"
 bundle = "ghcr.io/ocx-sh/lore/docs-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "grim-authoring"
-pinned = "ghcr.io/grimoire-rs/skills/grim-authoring@sha256:c2577fa1899a2ba33fdfdd70bb9375ed1a3a3e48849d11bfad9cf7546b724e82"
+pinned = "ghcr.io/grimoire-rs/skills/grim-authoring:0@sha256:d111a3d6704df87688de160b29ee11a9215e5b891a43cf43a2e2bc2acb68c2ce"
 bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "grim-usage"
-pinned = "ghcr.io/grimoire-rs/skills/grim-usage@sha256:5c729c75dee46d1c3aec22432ceeb04229fd87ebf23186ab74e2aedd0384be33"
+pinned = "ghcr.io/grimoire-rs/skills/grim-usage:0@sha256:5cdb1fc03cef777040a95a32e5a454a140e95de00c8d6c8b8fc7d9d676db0d2b"
 bundle = "ghcr.io/grimoire-rs/bundles/grim-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-architect"
-pinned = "ghcr.io/michael-herwig/arcana/hex-architect@sha256:fe82336b75b7ec77723f95c4280791c166e0a4c5b998c80ec6f5309794ef2bfa"
+pinned = "ghcr.io/michael-herwig/arcana/hex-architect:latest@sha256:fe82336b75b7ec77723f95c4280791c166e0a4c5b998c80ec6f5309794ef2bfa"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-core"
-pinned = "ghcr.io/michael-herwig/arcana/hex-core@sha256:64bedd5231c6d5c40bdae408861b53224128e2fec8d761d53e67f019b5fb2c39"
+pinned = "ghcr.io/michael-herwig/arcana/hex-core:latest@sha256:64bedd5231c6d5c40bdae408861b53224128e2fec8d761d53e67f019b5fb2c39"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-discuss"
-pinned = "ghcr.io/michael-herwig/arcana/hex-discuss@sha256:b0e014bb782defe9ef3d3cf24836bd6d37ba06de756cc369cc6a9c4d158584ed"
+pinned = "ghcr.io/michael-herwig/arcana/hex-discuss:latest@sha256:b0e014bb782defe9ef3d3cf24836bd6d37ba06de756cc369cc6a9c4d158584ed"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-execute"
-pinned = "ghcr.io/michael-herwig/arcana/hex-execute@sha256:b74c31371e0861a500b15b48b2f80733477ac454b449967d816b19a9ddbe01c2"
+pinned = "ghcr.io/michael-herwig/arcana/hex-execute:latest@sha256:b74c31371e0861a500b15b48b2f80733477ac454b449967d816b19a9ddbe01c2"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-finalize"
-pinned = "ghcr.io/michael-herwig/arcana/hex-finalize@sha256:d2522bd7ec97a6dc8775f1bcdc5c7ad1134df5d89732a5d174d0edc82378fb21"
+pinned = "ghcr.io/michael-herwig/arcana/hex-finalize:latest@sha256:d2522bd7ec97a6dc8775f1bcdc5c7ad1134df5d89732a5d174d0edc82378fb21"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-init"
-pinned = "ghcr.io/michael-herwig/arcana/hex-init@sha256:1a5635f72309ae4f19ff141440fe29dca59ef924333182de723474a7a157d46b"
+pinned = "ghcr.io/michael-herwig/arcana/hex-init:latest@sha256:1a5635f72309ae4f19ff141440fe29dca59ef924333182de723474a7a157d46b"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-loop"
-pinned = "ghcr.io/michael-herwig/arcana/hex-loop@sha256:59ccc12245adfa8e0f7531ae3edb819acefeda012f8f37b2c8e8df4402b3ff7f"
+pinned = "ghcr.io/michael-herwig/arcana/hex-loop:latest@sha256:59ccc12245adfa8e0f7531ae3edb819acefeda012f8f37b2c8e8df4402b3ff7f"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-plan"
-pinned = "ghcr.io/michael-herwig/arcana/hex-plan@sha256:e594ea45774a01d1cf0e7e09822ebde72bab7000dcbdc5ec53652e2a2b839684"
+pinned = "ghcr.io/michael-herwig/arcana/hex-plan:latest@sha256:e594ea45774a01d1cf0e7e09822ebde72bab7000dcbdc5ec53652e2a2b839684"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-retro"
-pinned = "ghcr.io/michael-herwig/arcana/hex-retro@sha256:963b6d3a969afc311d4283ea11ea6a8c31ef56a20a45f5c5cb14101cc223ae88"
+pinned = "ghcr.io/michael-herwig/arcana/hex-retro:latest@sha256:963b6d3a969afc311d4283ea11ea6a8c31ef56a20a45f5c5cb14101cc223ae88"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "hex-review"
-pinned = "ghcr.io/michael-herwig/arcana/hex-review@sha256:843ba7b434ad2a1d9cc7935b219b79286ce0767c7e1f2d6f95b324bb1acce536"
+pinned = "ghcr.io/michael-herwig/arcana/hex-review:latest@sha256:843ba7b434ad2a1d9cc7935b219b79286ce0767c7e1f2d6f95b324bb1acce536"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[skill]]
 name = "installer-script"
-pinned = "ghcr.io/ocx-sh/lore/installer-script@sha256:916d113c1d8abfae9c2809b47a2a6c55cf82b2b26a80c4a16757a9ab14589e72"
+pinned = "ghcr.io/ocx-sh/lore/installer-script:latest@sha256:916d113c1d8abfae9c2809b47a2a6c55cf82b2b26a80c4a16757a9ab14589e72"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
 
 [[skill]]
+name = "powershell-quality-reference"
+pinned = "ghcr.io/ocx-sh/lore/powershell-quality-reference:0@sha256:907a6c446306483b48f80a781bd41f4961b6bced9d2a994a57bc28f938697099"
+
+[[skill]]
 name = "shell-diagnose"
-pinned = "ghcr.io/ocx-sh/lore/shell-diagnose@sha256:5c36130dceb8ae2bf8ea331d9b4731a9c4c9da5e0bdf822810945ae84f2d29dd"
+pinned = "ghcr.io/ocx-sh/lore/shell-diagnose:latest@sha256:5c36130dceb8ae2bf8ea331d9b4731a9c4c9da5e0bdf822810945ae84f2d29dd"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "shell-integration"
-pinned = "ghcr.io/ocx-sh/lore/shell-integration@sha256:f6955152349af754cf26ddc73a936d0c0e21cb289525eb21b02dd67f028ef994"
+pinned = "ghcr.io/ocx-sh/lore/shell-integration:latest@sha256:f6955152349af754cf26ddc73a936d0c0e21cb289525eb21b02dd67f028ef994"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "shell-port"
-pinned = "ghcr.io/ocx-sh/lore/shell-port@sha256:b05c189ec9d8681729a882ccfc68dbcd8a50c72744f11a89a03cb58ef41c8550"
+pinned = "ghcr.io/ocx-sh/lore/shell-port:latest@sha256:09da7af83d6c4de994c6e23bbddc089b5a6675415d820a2ecb30dc89129ca8ac"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
 
 [[skill]]
+name = "shell-quality-reference"
+pinned = "ghcr.io/ocx-sh/lore/shell-quality-reference:0@sha256:11588458caf381ae5146b5744bf431385c39426c408b5969899a9b7ca3d21e90"
+
+[[skill]]
 name = "swift-diagnose"
-pinned = "ghcr.io/ocx-sh/lore/swift-diagnose@sha256:978e6eb0a9e4459f02668f9391d67d741fe21ec5c16409a249b4e5b69b922fc6"
+pinned = "ghcr.io/ocx-sh/lore/swift-diagnose:latest@sha256:630eed4c468366d4953a4feebd8a8617f0a07f42e7a366effdd770e18c683b57"
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
 
 [[skill]]
+name = "swift-package-reference"
+pinned = "ghcr.io/ocx-sh/lore/swift-package-reference:0@sha256:b3c16d124d5f75bae078dcdf54d35ad97d09cdca86c66b03b0c9078df6f5c2ac"
+
+[[skill]]
+name = "swift-quality-reference"
+pinned = "ghcr.io/ocx-sh/lore/swift-quality-reference:0@sha256:cd8ecf863be842e77515c898a07bfd8dac1fd3a61f56047a70bbc4e76fdd1990"
+
+[[skill]]
 name = "swift-release"
-pinned = "ghcr.io/ocx-sh/lore/swift-release@sha256:14122b738e89c65852155bacb9de95767282e95d6c0bd6ef1105e0c3c75e2c40"
+pinned = "ghcr.io/ocx-sh/lore/swift-release:latest@sha256:3f6cf8897a933c74dbcca0c058f0074b47f21c764388f7df0ac3a16e4e89dc97"
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
 
 [[skill]]
 name = "swift-upgrade"
-pinned = "ghcr.io/ocx-sh/lore/swift-upgrade@sha256:ab7e45755d0a8bf1a9b72cf76ced84ee375dde65b761ea0445fa32c74eeaf57a"
+pinned = "ghcr.io/ocx-sh/lore/swift-upgrade:latest@sha256:753a43d1be5e0068c0dc4777f1e5bb69a665e3eda9cefd49faacb0be8c2c527e"
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
 
 [[rule]]
 name = "code-docs"
-pinned = "ghcr.io/ocx-sh/lore/code-docs@sha256:0f0e026af937583e31a597a7d6b98b352ac7fefda15dd2e2c000ec31f857883a"
+pinned = "ghcr.io/ocx-sh/lore/code-docs:latest@sha256:8ff5b00d106dfc077892d78a43beeb4c82438aedd4af4f2834368083c1454f13"
+
+[[rule.requires]]
+kind = "skill"
+name = "code-docs-reference"
+id = "./code-docs-reference:0"
 
 [[rule]]
 name = "docs-quality"
-pinned = "ghcr.io/ocx-sh/lore/docs-quality@sha256:065355e0be2ce30d340c71b57bb10c5360a954a166023199535cedee56cee96c"
+pinned = "ghcr.io/ocx-sh/lore/docs-quality:latest@sha256:12d011028bd0b13fe50e5ff641920f0d47f456db0b40814857da77f10f33e7a9"
 bundle = "ghcr.io/ocx-sh/lore/docs-essentials"
 bundle_tag = "latest"
 
+[[rule.requires]]
+kind = "skill"
+name = "docs-quality-reference"
+id = "./docs-quality-reference:0"
+
 [[rule]]
 name = "hex-state"
-pinned = "ghcr.io/michael-herwig/arcana/hex-state@sha256:c06128ffd9ea8af07de24f950d351b9fb04358748cc0c3be522be03d8489a52f"
+pinned = "ghcr.io/michael-herwig/arcana/hex-state:latest@sha256:c06128ffd9ea8af07de24f950d351b9fb04358748cc0c3be522be03d8489a52f"
 bundle = "ghcr.io/michael-herwig/arcana/hex"
 bundle_tag = "latest"
 
 [[rule]]
 name = "powershell-quality"
-pinned = "ghcr.io/ocx-sh/lore/powershell-quality@sha256:d2b1e694db41e39d56d6f1ccd4b87c9046fac5c026e374f594bde494b2aab917"
+pinned = "ghcr.io/ocx-sh/lore/powershell-quality:latest@sha256:2a6f8196d2e1453e7a8738a283b4f0c9a718cd523fbfd2d56b5a176f93986ca1"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
+
+[[rule.requires]]
+kind = "skill"
+name = "powershell-quality-reference"
+id = "./powershell-quality-reference:0"
 
 [[rule]]
 name = "shell-quality"
-pinned = "ghcr.io/ocx-sh/lore/shell-quality@sha256:737adb8dfab155b1569aec93c709fea413c07af612ec0976e1e1d3aada95cef7"
+pinned = "ghcr.io/ocx-sh/lore/shell-quality:latest@sha256:b1be428e5afaeba4b592619fc711701f0a842c8c55adbe3ab67734b3dc0c619f"
 bundle = "ghcr.io/ocx-sh/lore/shell-essentials"
 bundle_tag = "latest"
 
+[[rule.requires]]
+kind = "skill"
+name = "shell-quality-reference"
+id = "./shell-quality-reference:0"
+
 [[rule]]
 name = "swift-package"
-pinned = "ghcr.io/ocx-sh/lore/swift-package@sha256:248da22d440ef547789ec59dfda536fec91fbce398be5bc804212bdb58b1a7f1"
+pinned = "ghcr.io/ocx-sh/lore/swift-package:latest@sha256:7267cfbc28d6c7834f1ca194df82024f389559a3d808e0b5384acbd08811b120"
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
+
+[[rule.requires]]
+kind = "skill"
+name = "swift-package-reference"
+id = "./swift-package-reference:0"
 
 [[rule]]
 name = "swift-quality"
-pinned = "ghcr.io/ocx-sh/lore/swift-quality@sha256:bb11fc764f95093e4427990ed64b15b74173979ef3c8c8af111b7600f054a879"
+pinned = "ghcr.io/ocx-sh/lore/swift-quality:latest@sha256:8b3493776fba48c9067458e728a20723099ede80d3636fc8a1311ae115b3ac7a"
 bundle = "ghcr.io/ocx-sh/lore/swift-essentials"
 bundle_tag = "latest"
 
+[[rule.requires]]
+kind = "skill"
+name = "swift-quality-reference"
+id = "./swift-quality-reference:0"
+
 [[mcp]]
 name = "grim"
-pinned = "ghcr.io/grimoire-rs/mcp/grim@sha256:fa8236ade26b517a5a8e0ce16effc453e5f79d8d61da4badad16757dc43d52d3"
+pinned = "ghcr.io/grimoire-rs/mcp/grim:0@sha256:fa6d9545b7fac10c9e3d79c156cf4a459871b28a4581837104da31eec7a2d219"
 
 [[bundle]]
 name = "code-docs-essentials"
@@ -251,7 +305,7 @@ id = "ghcr.io/ocx-sh/lore/docs-quality:latest"
 name = "grim-essentials"
 repo = "ghcr.io/grimoire-rs/bundles/grim-essentials"
 tag = "latest"
-pinned = "ghcr.io/grimoire-rs/bundles/grim-essentials@sha256:3c6f53f4b44b12a65f7b6247de72323b864ee4a22fa420e77478ef95aab1e116"
+pinned = "ghcr.io/grimoire-rs/bundles/grim-essentials@sha256:b3b77bcad7610e82fd4c16c1060e048b6a5a7ffa05eb5ae362440b9953f6007d"
 
 [[bundle.member]]
 kind = "skill"
