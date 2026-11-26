@@ -9,6 +9,7 @@
 # task is the entry point, so it lands on PATH eagerly.
 [tools]
 task = "ocx.sh/go-task/task:3.53.1"
+grim = "ocx.sh/grimoire/cli:latest"
 
 # Groups download on first use, so a fresh checkout pulls only task.
 [group.lint]

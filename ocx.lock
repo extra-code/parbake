@@ -1,14 +1,29 @@
 [metadata]
-lock_version = 3
+lock_version = 4
 declaration_hash_version = 1
-declaration_hash = "sha256:36e47ec8fb228bcdbb39a05dbfca0a866afbafd606462521227ca88e6106d46f"
-generated_by = "ocx 0.6.5"
-generated_at = "2026-10-25T19:44:09Z"
+declaration_hash = "sha256:f03ec3676340beb5fffcc2f00216bb2c1c70626315c9cd2fd9041881cb6bbc95"
+generated_by = "ocx 0.6.8"
+generated_at = "2026-11-26T18:14:55Z"
+
+[[tool]]
+name = "grim"
+group = "default"
+repository = "ocx.sh/grimoire/cli"
+declared = "ocx.sh/grimoire/cli:latest"
+
+[tool.platforms]
+"darwin/amd64" = "sha256:9be69f48319c8405904b23211c5728ed94f4f81947ef5752b7d04abbdac15ec2"
+"darwin/arm64" = "sha256:ea49c2d893257cbd93042dbb68ef4b3846b88f863f792d12a96ccf27e51219c3"
+"linux/amd64" = "sha256:6ded85d7023473badf827e0d57aabbf33ab5a1005403e01e5da694a8e02e9d1e"
+"linux/arm64" = "sha256:39621e68eec86528775014d3c2f7648bc81052b73f37dfe688d984ea22b72475"
+"windows/amd64" = "sha256:277180acc2dc9bdab3efc517e82e5ada3c25a4c3727a4cc97084626595d96948"
+"windows/arm64" = "sha256:bbe716e52644f6cdbd3047b199920f3621f28479e83d8fffa3c3ec3fdc69a2b8"
 
 [[tool]]
 name = "task"
 group = "default"
 repository = "ocx.sh/go-task/task"
+declared = "ocx.sh/go-task/task:3.53.1"
 
 [tool.platforms]
 "darwin/amd64" = "sha256:958d2f88bec42ed62b3ab8e0435bffe5cecdfdad43055c3a8e7ec376564c4886"
@@ -22,6 +37,7 @@ repository = "ocx.sh/go-task/task"
 name = "shellcheck"
 group = "lint"
 repository = "ocx.sh/shellcheck/shellcheck"
+declared = "ocx.sh/shellcheck/shellcheck:0.11.0"
 
 [tool.platforms]
 "darwin/amd64" = "sha256:3f609d1f8981b9b62804a788fc78c90ec7e8fac8d6a24b5e76b18be14964e08a"
@@ -34,6 +50,7 @@ repository = "ocx.sh/shellcheck/shellcheck"
 name = "shfmt"
 group = "lint"
 repository = "ocx.sh/shfmt/shfmt"
+declared = "ocx.sh/shfmt/shfmt:3.14.1"
 
 [tool.platforms]
 "darwin/amd64" = "sha256:4c0682bda360d9b93602f7cac0c0ba943e0eb6a10888c00883ef43f03cbc4b04"
@@ -46,6 +63,7 @@ repository = "ocx.sh/shfmt/shfmt"
 name = "uv"
 group = "lint"
 repository = "ocx.sh/astral-sh/uv"
+declared = "ocx.sh/astral-sh/uv:0.13.5"
 
 [tool.platforms]
 "darwin/amd64" = "sha256:046d0fef5e07a8d21374200d76557fa53b5983b0595f5245bf2698d312c45b96"
@@ -61,6 +79,7 @@ repository = "ocx.sh/astral-sh/uv"
 name = "git-cliff"
 group = "release"
 repository = "ocx.sh/git-cliff/git-cliff"
+declared = "ocx.sh/git-cliff/git-cliff:2.14.2"
 
 [tool.platforms]
 "darwin/amd64" = "sha256:a00b3362112420302cc991973b09f3bea506f774ebf56395c63701540b0e1ad7"
